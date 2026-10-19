@@ -15,3 +15,5 @@ os.makedirs(out, exist_ok=True)
 icon = ghost_icon("idle", 256)
 for size in (16, 32, 48, 128):
     icon.pixmap(size, size).save(os.path.join(out, f"{size}.png"))
+
+icon.pixmap(256, 256).save(os.path.join(os.path.dirname(out), "..", "phi.ico"), "ICO")

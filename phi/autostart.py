@@ -9,6 +9,8 @@ VALUE = "PHI"
 
 
 def _command() -> str:
+    if getattr(sys, "frozen", False):  # packaged PHI.exe
+        return f'"{sys.executable}" --background'
     exe = sys.executable
     pyw = exe.replace("python.exe", "pythonw.exe") if exe.lower().endswith("python.exe") else exe
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
