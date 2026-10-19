@@ -1,0 +1,18 @@
+{
+  "manifest_version": 3,
+  "name": "PHI Companion",
+  "version": "0.1.0",
+  "description": "Tells the PHI desktop app which site is active and whether it is YouTube Shorts. Sends only the hostname. Talks to 127.0.0.1 only.",
+  "permissions": ["tabs", "alarms"],
+  "host_permissions": ["http://127.0.0.1:47615/*"],
+  "background": { "service_worker": "background.js" },
+  "content_scripts": [
+    {
+      "matches": ["*://*.youtube.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": { "default_title": "PHI Companion" },
+  "icons": { "16": "icons/16.png", "32": "icons/32.png", "48": "icons/48.png", "128": "icons/128.png" }
+}
