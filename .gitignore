@@ -21,3 +21,6 @@ installer_output/
 .idea/
 Thumbs.db
 .DS_Store
+
+.venv312/
+redist/
