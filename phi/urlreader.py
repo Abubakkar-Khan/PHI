@@ -11,7 +11,7 @@ import threading
 import time
 from urllib.parse import urlparse
 
-POLL_SECONDS = 1.5
+POLL_SECONDS = 0.4
 _SHORTS_ID = re.compile(r"^/shorts/([^/?#]+)")
 _PRIVATE = re.compile(r"incognito|inprivate|private", re.I)
 

@@ -189,11 +189,12 @@ class Mascot(QWidget):
 class RingMascot(QWidget):
     """The mascot inside a slowly rotating dotted ring (used by the popup)."""
 
-    def __init__(self, size: int = 230, px: int = 6, mood: str = "alert", parent=None):
+    def __init__(self, size: int = 230, px: int = 6, mood: str = "alert", dark: bool = False, parent=None):
         super().__init__(parent)
         self.setFixedSize(size, size)
         self._phase = 0.0
         self._mood = mood
+        self._dark = dark
         self.mascot = Mascot(px=px, mood=mood, parent=self)
         self.mascot.move((size - self.mascot.width()) // 2, (size - self.mascot.height()) // 2 + 6)
         self._timer = QTimer(self)
@@ -222,12 +223,17 @@ class RingMascot(QWidget):
         c = QPointF(self.width() / 2, self.height() / 2)
         r = self.width() / 2 - 6
         n = 72
+        base = QColor(T.PAPER) if self._dark else QColor(T.INK)
+        if self._dark:  # light disc so the ghost's dark outline reads on a black screen
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QColor(T.BG))
+            p.drawEllipse(c, r - 16, r - 16)
         for i in range(n):
             a = 2 * math.pi * i / n - math.pi / 2
             lead = ((i / n) - self._phase) % 1.0   # 0 = head of the sweep
             tail = 1.0 - lead
             glow = max(0.0, 1.0 - tail * 5.0) if tail < 0.2 else 0.0
-            col = T.mix(T.qc(T.INK, 0.42), T.qc(T.INK, 1.0), glow)
+            col = T.mix(T.qc(base.name(), 0.42), T.qc(base.name(), 1.0), glow)
             size = 1.2 + glow * 1.5
             if self._mood == "alert" and i == 0:
                 col, size = QColor(T.RED), 3.0

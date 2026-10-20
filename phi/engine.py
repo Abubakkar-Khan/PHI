@@ -57,9 +57,11 @@ class Engine(QObject):
         self._status = "monitoring"
         self._browser_hwnd = 0
         self._repeat = 0
+        self._pin_hwnd = 0
+        self._pin_until = 0.0
         self._load_today()
         self.timer = QTimer(self)
-        self.timer.setInterval(1000)
+        self.timer.setInterval(500)
         self.timer.timeout.connect(self._tick)
 
     # ---- lifecycle ----------------------------------------------------
@@ -150,7 +152,8 @@ class Engine(QObject):
             if exe in BROWSERS:
                 self._browser_hwnd = fg.hwnd
             if self.reader:
-                self.reader.set_target(fg.hwnd if exe in BROWSERS and exe != "firefox.exe" else 0)
+                pinned = self._pin_hwnd if time.time() < self._pin_until else 0
+                self.reader.set_target(fg.hwnd if exe in BROWSERS and exe != "firefox.exe" else pinned)
             src = None
             if exe in BROWSERS:
                 if hb and hb["active"]:
@@ -308,14 +311,19 @@ class Engine(QObject):
 
     # ---- closing without the extension -------------------------------------
     def _close_by_keys(self, match: str) -> None:
-        """Close the active tab with Ctrl+W, but only if it is still the page the nudge was about."""
+        """Focus the browser, re-read its address bar, and Ctrl+W only if it is still on the nudged page."""
         hwnd = self._browser_hwnd
-        res = self.reader.latest(hwnd, max_age=6.0) if (hwnd and self.reader) else None
+        if not (hwnd and self.reader):
+            return
+        self._pin_hwnd, self._pin_until = hwnd, time.time() + 4
+        winapi.focus(hwnd)
+        QTimer.singleShot(900, lambda: self._verify_close(hwnd, match))
+
+    def _verify_close(self, hwnd: int, match: str) -> None:
+        res = self.reader.latest(hwnd, max_age=3.0)
         self.log(f"close-by-keys hwnd={hwnd} reader={'none' if not res else (res['host'], res['shorts'])}")
         if not res:
             return
         ok = res["shorts"] if match == "shorts" else host_matches(normalize_host(res["host"]), match)
-        if not ok:
-            return
-        winapi.focus(hwnd)
-        QTimer.singleShot(200, winapi.send_ctrl_w)
+        if ok:
+            winapi.send_ctrl_w()

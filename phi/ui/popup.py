@@ -21,6 +21,7 @@ from ..utils import fmt_clock, fmt_dur, minutes_text
 from . import theme as T
 from .mascot import RingMascot
 from .pages import mk_label
+from .lockscreen import LockScreen
 from .widgets import LinkButton, PillButton
 
 SHADOW = 24
@@ -382,7 +383,10 @@ class PopupController:
             self.current.update_seconds(snap["session"])
 
     def show(self, payload: dict):
-        popup = NudgePopup(payload, self.cfg.get("extend_min"), self.cfg.get("pause_min"))
+        if self.cfg.get("lockdown"):
+            popup = LockScreen(payload, self.cfg.get("extend_min"), self.cfg.get("lockdown_seconds"))
+        else:
+            popup = NudgePopup(payload, self.cfg.get("extend_min"), self.cfg.get("pause_min"))
         popup.action.connect(lambda a, pl=payload: self.engine.resolve(pl, a))
         popup.destroyed.connect(lambda: setattr(self, "current", None) if self.current is popup else None)
         popup.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)

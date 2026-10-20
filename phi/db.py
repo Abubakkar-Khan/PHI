@@ -34,6 +34,8 @@ CREATE TABLE IF NOT EXISTS settings (
 DEFAULTS = {
     "name": "",
     "reminders": True,
+    "lockdown": True,              # full-screen takeover instead of a small card
+    "lockdown_seconds": 10,        # auto-close countdown (grows if PHI has to ask again)
     "shorts_limit_min": 20,        # continuous Shorts session before a nudge
     "shorts_daily_min": 60,        # total Shorts budget per day
     "extend_min": 5,               # "give me N more minutes"
