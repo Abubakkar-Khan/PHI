@@ -191,9 +191,6 @@ class Settings:
         self.store = store
         self._d = {k: (list(v) if isinstance(v, list) else v) for k, v in DEFAULTS.items()}
         self._d.update(store.load_settings())
-        if not self._d.get("shorts_limit_min"):  # 0 used to silently disable nudges; the session limit is now 1+
-            self._d["shorts_limit_min"] = DEFAULTS["shorts_limit_min"]
-            store.save_setting("shorts_limit_min", self._d["shorts_limit_min"])
         self._subs: list[Callable[[str], None]] = []
 
     def get(self, key: str):

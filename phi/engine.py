@@ -209,7 +209,7 @@ class Engine(QObject):
         daily_limit = self.cfg.get("shorts_daily_min") * 60
         today = self.today_seconds("shorts", "youtube")
         reason = None
-        if session_limit and self._session >= session_limit + self._extra_session:
+        if self._session >= session_limit + self._extra_session:  # 0 = nudge as soon as Shorts opens
             reason = "shorts"
         elif daily_limit and today >= daily_limit + self._extra_daily:
             reason = "daily"

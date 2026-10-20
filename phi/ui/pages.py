@@ -420,7 +420,7 @@ class SettingsPage(Page):
         v.addWidget(caps("Attention"))
         v.addWidget(self._group([
             SettingRow("Reminders", "Show the PHI nudge when a limit is crossed.", self._toggle("reminders")),
-            SettingRow("Shorts session limit", "Continuous Shorts time before a nudge.", self._stepper("shorts_limit_min", 1, 240, 5, "min")),
+            SettingRow("Shorts session limit", "Continuous Shorts time before a nudge. 0 = right away.", self._stepper("shorts_limit_min", 0, 240, 1, "min")),
             SettingRow("Shorts daily budget", "Total Shorts time per day. 0 turns it off.", self._stepper("shorts_daily_min", 0, 600, 10, "min")),
             SettingRow("“Give me more” adds", "How long a snooze lasts.", self._stepper("extend_min", 1, 60, 1, "min")),
             SettingRow("“Pause reminders” lasts", "", self._stepper("pause_min", 5, 480, 5, "min")),
