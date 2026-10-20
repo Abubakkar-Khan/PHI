@@ -7,13 +7,14 @@ from __future__ import annotations
 
 import os
 import time
+import traceback
 from collections import defaultdict
 from datetime import date, datetime
 
 from PySide6.QtCore import QObject, QTimer, Signal
 
 from . import winapi
-from .db import Settings, Store
+from .db import Settings, Store, data_dir
 from .server import Bridge
 from .urlreader import UrlReader
 from .utils import host_matches, normalize_host, pretty_app, pretty_site
@@ -55,7 +56,7 @@ class Engine(QObject):
         self._last_swipes: dict[int, int] = {}
         self._status = "monitoring"
         self._browser_hwnd = 0
-
+        self._repeat = 0
         self._load_today()
         self.timer = QTimer(self)
         self.timer.setInterval(1000)
@@ -106,7 +107,23 @@ class Engine(QObject):
         return any(host_matches(host, d) for d in self.cfg.get("excluded_sites"))
 
     # ---- main tick -----------------------------------------------------
+    def log(self, msg: str) -> None:
+        try:
+            path = os.path.join(data_dir(), "phi.log")
+            if os.path.exists(path) and os.path.getsize(path) > 200_000:
+                os.replace(path, path + ".old")
+            with open(path, "a", encoding="utf-8") as fh:
+                fh.write(time.strftime("%H:%M:%S ") + msg + "\n")
+        except OSError:
+            pass
+
     def _tick(self) -> None:
+        try:
+            self._tick_inner()
+        except Exception:
+            self.log("TICK ERROR " + traceback.format_exc())
+
+    def _tick_inner(self) -> None:
         now = time.time()
         dt = now - self._last
         self._last = now
@@ -172,6 +189,11 @@ class Engine(QObject):
                 elif site:
                     self._check_site(site, label)
 
+        sig = (self._status, label)
+        if sig != getattr(self, "_last_sig", None):
+            self._last_sig = sig
+            self.log(f"state {self._status} / {label} / link={link}")
+
         if now - self._last_flush >= FLUSH_EVERY:
             self.flush()
 
@@ -206,6 +228,7 @@ class Engine(QObject):
         if self._last_shorts and now - self._last_shorts > SESSION_GAP:
             self._session = 0.0
             self._extra_session = 0.0
+            self._repeat = 0
         self._last_shorts = now
         self._session += dt
 
@@ -233,7 +256,12 @@ class Engine(QObject):
             return
 
     def _emit_nudge(self, payload: dict) -> None:
+        self._repeat += 1
+        payload["repeat"] = self._repeat
+        payload["today_s"] = self.today_seconds("shorts", "youtube") if payload["kind"] != "site" else payload["seconds"]
+        payload["count"] = int(self.today_seconds("swipes", "shorts")) if payload["kind"] != "site" else 0
         self.nudge_open = True
+        self.log(f"NUDGE {payload['kind']} session={self._session:.0f}s")
         self.store.log_event(time.time(), self._day, "nudge", payload["kind"])
         self.nudge.emit(payload)
 
@@ -245,6 +273,7 @@ class Engine(QObject):
         self.store.log_event(now, self._day, action, payload["kind"])
         extend = self.cfg.get("extend_min") * 60
         kind = payload["kind"]
+        self.log(f"RESOLVE {action} ({kind})")
 
         if action == "stop":
             match = "shorts" if kind in ("shorts", "daily") else payload["domain"]
@@ -255,6 +284,7 @@ class Engine(QObject):
             # fresh start: reopening Shorts is a new session and is checked again right away
             self._session = 0.0
             self._last_shorts = 0.0
+            self._repeat = 0
             self._extra_session = self._extra_daily = 0.0
             self.bypass_until = max(self.bypass_until, now + 5)
             self.celebrated.emit()
@@ -280,9 +310,8 @@ class Engine(QObject):
     def _close_by_keys(self, match: str) -> None:
         """Close the active tab with Ctrl+W, but only if it is still the page the nudge was about."""
         hwnd = self._browser_hwnd
-        if not (hwnd and self.reader):
-            return
-        res = self.reader.latest(hwnd, max_age=6.0)
+        res = self.reader.latest(hwnd, max_age=6.0) if (hwnd and self.reader) else None
+        self.log(f"close-by-keys hwnd={hwnd} reader={'none' if not res else (res['host'], res['shorts'])}")
         if not res:
             return
         ok = res["shorts"] if match == "shorts" else host_matches(normalize_host(res["host"]), match)

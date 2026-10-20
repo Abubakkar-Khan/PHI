@@ -1,20 +1,81 @@
-"""The signature PHI moment: a compact, gentle, never-focus-stealing nudge."""
+"""The signature PHI moment: a takeover you cannot miss, without strobing or stealing the keyboard.
+
+Strategy
+- Dim the whole screen (smooth scrim) so the Short stops being the loudest thing visible.
+- The card drops in with a thud, an alarm tone plays, and a hazard stripe marches across its top.
+- Concrete numbers (live session clock, today's total, how many Shorts) replace vague wording.
+- Friction: "more time" is locked for a few seconds and the lock grows each time PHI has to ask again.
+"""
 from __future__ import annotations
 
 import random
+import sys
+import threading
 
-from PySide6.QtCore import QEasingCurve, QParallelAnimationGroup, QPoint, QPropertyAnimation, QRectF, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QGuiApplication, QPainter, QPen
+from PySide6.QtCore import (Property, QEasingCurve, QParallelAnimationGroup, QPoint, QPointF, QPropertyAnimation, QRectF, Qt,
+                            QTimer, Signal)
+from PySide6.QtGui import QColor, QCursor, QGuiApplication, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import QHBoxLayout, QVBoxLayout, QWidget
 
-from ..utils import fmt_clock, minutes_text
+from ..utils import fmt_clock, fmt_dur, minutes_text
 from . import theme as T
 from .mascot import RingMascot
 from .pages import mk_label
 from .widgets import LinkButton, PillButton
 
-SHADOW = 22
+SHADOW = 24
+CARD_W, CARD_H = 480, 664
 CLOSE_HIT = 34
+
+
+def _alarm() -> None:
+    """Three falling tones, played off the UI thread."""
+    if sys.platform != "win32":
+        return
+
+    def play():
+        try:
+            import winsound
+            for freq, ms in ((932, 110), (740, 110), (523, 260)):
+                winsound.Beep(freq, ms)
+        except Exception:
+            pass
+    threading.Thread(target=play, daemon=True).start()
+
+
+class Scrim(QWidget):
+    """Full-screen dim layer. Eats mouse clicks (no accidental swipes) but never takes keyboard focus."""
+
+    def __init__(self):
+        super().__init__()
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.Tool
+                            | Qt.WindowType.WindowDoesNotAcceptFocus)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
+        self.setGeometry(QGuiApplication.primaryScreen().virtualGeometry())
+        self._alpha = 0.0
+        self._anim = QPropertyAnimation(self, b"alpha", self)
+        self._anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+
+    def get_alpha(self) -> float:
+        return self._alpha
+
+    def set_alpha(self, v: float) -> None:
+        self._alpha = v
+        self.update()
+
+    alpha = Property(float, get_alpha, set_alpha)
+
+    def fade(self, to: float, ms: int) -> None:
+        self._anim.stop()
+        self._anim.setDuration(ms)
+        self._anim.setStartValue(self._alpha)
+        self._anim.setEndValue(to)
+        self._anim.start()
+
+    def paintEvent(self, _):
+        p = QPainter(self)
+        p.fillRect(self.rect(), QColor(12, 10, 10, int(255 * self._alpha)))
 
 
 class _CloseX(QWidget):
@@ -46,17 +107,17 @@ class _CloseX(QWidget):
             p.drawRoundedRect(QRectF(self.rect()).adjusted(4, 4, -4, -4), 8, 8)
         p.setPen(QPen(QColor(T.INK if self._h else T.GRAY), 1.4))
         c = CLOSE_HIT / 2
-        p.drawLine(c - 4.5, c - 4.5, c + 4.5, c + 4.5)
-        p.drawLine(c - 4.5, c + 4.5, c + 4.5, c - 4.5)
+        p.drawLine(QPointF(c - 4.5, c - 4.5), QPointF(c + 4.5, c + 4.5))
+        p.drawLine(QPointF(c - 4.5, c + 4.5), QPointF(c + 4.5, c - 4.5))
 
 
 class NudgePopup(QWidget):
     action = Signal(str)   # stop | more | pause | bypass | dismiss
 
     HEADLINES = {
-        "shorts": ["Still scrolling?", "Quick check-in.", "Surface for air?"],
-        "daily": ["That's today's budget.", "Budget reached."],
-        "site": ["Time check.", "Still here?"],
+        "shorts": [["STOP SCROLLING.", "ENOUGH SHORTS."], ["AGAIN? REALLY?"], ["YOU KNOW THE DRILL."]],
+        "daily": [["BUDGET BLOWN.", "THAT'S ENOUGH TODAY."], ["STILL HERE?"], ["NO MORE TODAY."]],
+        "site": [["LIMIT HIT.", "TIME'S UP."], ["AGAIN?"], ["GO DO SOMETHING."]],
     }
 
     def __init__(self, payload: dict, extend_min: int, pause_min: int):
@@ -66,16 +127,22 @@ class NudgePopup(QWidget):
         self._done = False
         self._seconds = payload["seconds"]
         self._typed = 0
+        self._stripe = 0.0
+        self._extend_min = extend_min
+        self.repeat = max(1, int(payload.get("repeat", 1)))
+        self._lock = min(12, 3 * self.repeat)           # seconds "more time" stays locked
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.Tool
                             | Qt.WindowType.NoDropShadowWindowHint | Qt.WindowType.WindowDoesNotAcceptFocus)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
-        self.setFixedSize(460 + SHADOW * 2, 560 + SHADOW * 2)
+        self.setFixedSize(CARD_W + SHADOW * 2, CARD_H + SHADOW * 2)
 
         label = payload["label"]
-        self.headline = random.choice(self.HEADLINES[self.kind])
+        tiers = self.HEADLINES[self.kind]
+        self.headline = random.choice(tiers[min(self.repeat, len(tiers)) - 1])
         if self.kind == "shorts":
-            self.sub = f"You've been watching Shorts for {minutes_text(self._seconds)}."
+            self.sub = ("Shorts is open. You set a limit for a reason." if self._seconds < 60
+                        else f"You've been watching Shorts for {minutes_text(self._seconds)}.")
             stop_text = "I'm done — close Shorts"
         elif self.kind == "daily":
             self.sub = f"That's {minutes_text(self._seconds)} of Shorts today."
@@ -83,53 +150,52 @@ class NudgePopup(QWidget):
         else:
             self.sub = f"{minutes_text(self._seconds)} on {label} today."
             stop_text = f"I'm done — close {label}"
-        self.status = {"shorts": "01 DISTRACTION\nDETECTED.", "daily": "01 BUDGET\nREACHED.", "site": "01 LIMIT\nREACHED."}[self.kind]
+        self.status = {"shorts": "DISTRACTION DETECTED", "daily": "DAILY BUDGET REACHED", "site": "SITE LIMIT REACHED"}[self.kind]
 
         root = QVBoxLayout(self)
-        root.setContentsMargins(SHADOW + 26, SHADOW + 14, SHADOW + 26, SHADOW + 24)
+        root.setContentsMargins(SHADOW + 28, SHADOW + 22, SHADOW + 28, SHADOW + 24)
         root.setSpacing(0)
 
         top = QHBoxLayout()
         top.addWidget(mk_label("PHI_", T.mono(12, T.QFont.Weight.Medium, 2), T.GRAY))
+        top.addSpacing(10)
+        top.addWidget(mk_label("● " + self.status, T.mono(10, T.QFont.Weight.Medium, 1.4), T.RED))
         top.addStretch(1)
         x = _CloseX()
         x.clicked.connect(lambda: self._finish("dismiss"))
         top.addWidget(x)
         root.addLayout(top)
 
-        mid = QHBoxLayout()
-        mid.addWidget(mk_label(self.status, T.mono(9, spacing=1.2), T.GRAY), 0, Qt.AlignmentFlag.AlignTop)
-        mid.addStretch(1)
-        mid.addWidget(mk_label("ATTENTION\nIS A\nCHOICE_", T.mono(9, spacing=1.2), T.GRAY, Qt.AlignmentFlag.AlignRight), 0, Qt.AlignmentFlag.AlignTop)
-        root.addLayout(mid)
-        root.addSpacing(-34)
-
-        self.ring = RingMascot(230, 6, "alert")
+        self.ring = RingMascot(188, 5, "alert")
         root.addWidget(self.ring, 0, Qt.AlignmentFlag.AlignHCenter)
-        root.addSpacing(6)
 
-        self.title = mk_label("", T.sans(32, T.QFont.Weight.Medium), T.INK, Qt.AlignmentFlag.AlignHCenter)
+        self.big = mk_label("", T.mono(54, T.QFont.Weight.Bold), T.RED, Qt.AlignmentFlag.AlignHCenter)
+        root.addWidget(self.big)
+        self.title = mk_label("", T.sans(27, T.QFont.Weight.Bold), T.INK, Qt.AlignmentFlag.AlignHCenter)
         root.addWidget(self.title)
         self.subtitle = mk_label(self.sub, T.sans(14), T.GRAY, Qt.AlignmentFlag.AlignHCenter)
         root.addWidget(self.subtitle)
-        self.clock = mk_label("", T.mono(11, spacing=1.4), T.GRAY, Qt.AlignmentFlag.AlignHCenter)
-        root.addWidget(self.clock)
-        root.addSpacing(18)
+        root.addSpacing(8)
+        self.facts = mk_label(self._facts(), T.mono(10, T.QFont.Weight.Medium, 1.2), T.INK, Qt.AlignmentFlag.AlignHCenter)
+        root.addWidget(self.facts)
+        root.addSpacing(16)
 
         btns = QVBoxLayout()
         btns.setSpacing(10)
-        self.b_stop = PillButton(stop_text, "primary", "stop", height=48)
-        self.b_more = PillButton(f"Give me {extend_min} more minutes", "secondary", "clock", height=48)
+        self.b_stop = PillButton(stop_text, "primary", "stop", height=52)
+        self.b_more = PillButton("", "secondary", "clock", height=46)
         self.b_stop.clicked.connect(lambda: self._finish("stop"))
         self.b_more.clicked.connect(lambda: self._finish("more"))
         btns.addWidget(self.b_stop)
         btns.addWidget(self.b_more)
         root.addLayout(btns)
+        self._update_more()
         root.addSpacing(10)
 
         links = QHBoxLayout()
         links.addStretch(1)
-        pause = LinkButton(f"Pause reminders for {pause_min // 60 if pause_min % 60 == 0 and pause_min >= 60 else pause_min}{'h' if pause_min % 60 == 0 and pause_min >= 60 else 'm'}")
+        hours = pause_min % 60 == 0 and pause_min >= 60
+        pause = LinkButton(f"Pause reminders for {pause_min // 60 if hours else pause_min}{'h' if hours else 'm'}")
         pause.clicked.connect(lambda: self._finish("pause"))
         byp = LinkButton("I'm using it for something important")
         byp.clicked.connect(lambda: self._finish("bypass"))
@@ -139,60 +205,96 @@ class NudgePopup(QWidget):
         links.addStretch(1)
         root.addLayout(links)
 
-        # typewriter + live clock
         self._type_timer = QTimer(self)
-        self._type_timer.setInterval(45)
+        self._type_timer.setInterval(24)
         self._type_timer.timeout.connect(self._type)
         self._tick_timer = QTimer(self)
         self._tick_timer.setInterval(1000)
         self._tick_timer.timeout.connect(self._tick)
-        self._cursor_on = True
+        self._stripe_timer = QTimer(self)
+        self._stripe_timer.setInterval(60)
+        self._stripe_timer.timeout.connect(self._march)
+        self.scrim: Scrim | None = None
+
+    # ---- text helpers
+    def _facts(self) -> str:
+        parts = [f"TODAY {fmt_dur(self.payload.get('today_s', self._seconds))}"]
+        if self.payload.get("count"):
+            parts.append(f"{self.payload['count']} SHORTS WATCHED")
+        parts.append(f"NUDGE #{self.repeat}")
+        return "   ·   ".join(parts)
+
+    def _big_text(self) -> str:
+        return fmt_clock(self._seconds) if self.kind == "shorts" else fmt_dur(self._seconds).replace(" ", "")
+
+    def _update_more(self) -> None:
+        if self._lock > 0:
+            self.b_more.setText(f"Give me {self._extend_min} more minutes  ·  {self._lock}s")
+            self.b_more.setEnabled(False)
+        else:
+            self.b_more.setText(f"Give me {self._extend_min} more minutes")
+            self.b_more.setEnabled(True)
 
     # ---- lifecycle
     def present(self):
-        screen = QGuiApplication.primaryScreen().availableGeometry()
-        self._home = QPoint(screen.center().x() - self.width() // 2, screen.center().y() - self.height() // 2)
-        self.move(self._home + QPoint(0, 24))
+        screen = QGuiApplication.screenAt(QCursor.pos()) or QGuiApplication.primaryScreen()
+        area = screen.availableGeometry()
+        self._home = QPoint(area.center().x() - self.width() // 2, area.center().y() - self.height() // 2)
+        self.scrim = Scrim()
+        self.scrim.show()
+        self.scrim.fade(0.66, 260)
+        self.move(self._home + QPoint(0, -140))
         self.setWindowOpacity(0.0)
         self.show()
         self.raise_()
         fade = QPropertyAnimation(self, b"windowOpacity", self)
-        fade.setDuration(320)
+        fade.setDuration(140)
         fade.setStartValue(0.0)
         fade.setEndValue(1.0)
-        rise = QPropertyAnimation(self, b"pos", self)
-        rise.setDuration(420)
-        rise.setStartValue(self._home + QPoint(0, 24))
-        rise.setEndValue(self._home)
-        rise.setEasingCurve(QEasingCurve.Type.OutBack)
+        drop = QPropertyAnimation(self, b"pos", self)       # falls in and lands with a bounce: a thud
+        drop.setDuration(560)
+        drop.setStartValue(self._home + QPoint(0, -140))
+        drop.setEndValue(self._home)
+        drop.setEasingCurve(QEasingCurve.Type.OutBounce)
         self._in = QParallelAnimationGroup(self)
         self._in.addAnimation(fade)
-        self._in.addAnimation(rise)
+        self._in.addAnimation(drop)
         self._in.start()
-        QTimer.singleShot(250, self._type_timer.start)
+        _alarm()
+        QTimer.singleShot(200, self._type_timer.start)
         self._tick_timer.start()
+        self._stripe_timer.start()
         self._tick()
 
     def update_seconds(self, seconds: float):
         self._seconds = seconds
-        self._tick()
+        self._tick(count=False)
 
-    def _tick(self):
+    def _tick(self, count: bool = True):
         if self._done:
             return
-        self.clock.setText(f"SESSION {fmt_clock(self._seconds)}" if self.kind == "shorts" else "")
+        self.big.setText(self._big_text())
+        if count and self._lock > 0:
+            self._lock -= 1
+            self._update_more()
+
+    def _march(self):
+        self._stripe = (self._stripe + 1.6) % 28
+        self.update(QRectF(SHADOW, SHADOW, CARD_W, 16).toRect())
 
     def _type(self):
         text = self.headline
         if self._typed < len(text):
             self._typed += 1
-            self.title.setText(text[:self._typed] + "_")
+            self.title.setText(text[:self._typed] + "▌")
         else:
-            self._cursor_on = not self._cursor_on
-            self.title.setText(text + ("_" if self._cursor_on else " "))
+            self.title.setText(text)
+            self._type_timer.stop()
 
     def _finish(self, action: str):
         if self._done:
+            return
+        if action == "more" and self._lock > 0:
             return
         self._done = True
         self._type_timer.stop()
@@ -201,18 +303,22 @@ class NudgePopup(QWidget):
             b.setEnabled(False)
         if action == "stop":
             self.ring.set_mood("celebrate")
+            self.big.setText("✓")
+            self.big.setStyleSheet(f"color:{T.INK}; background:transparent;")
             self.title.setText("Nice. Back to it.")
             self.subtitle.setText("Good call. Closing it for you.")
-            self.clock.setText("")
-            hold = 1700
+            self.facts.setText("")
+            hold = 1500
         else:
             hold = 0
         self.action.emit(action)
         QTimer.singleShot(hold, self._fade_out)
 
     def _fade_out(self):
+        if self.scrim:
+            self.scrim.fade(0.0, 260)
         out = QPropertyAnimation(self, b"windowOpacity", self)
-        out.setDuration(220)
+        out.setDuration(240)
         out.setStartValue(self.windowOpacity())
         out.setEndValue(0.0)
         out.finished.connect(self.close)
@@ -220,33 +326,46 @@ class NudgePopup(QWidget):
         self._out = out
 
     def closeEvent(self, e):
+        self._stripe_timer.stop()
+        if self.scrim:
+            self.scrim.close()
+            self.scrim = None
         if not self._done:
             self._done = True
             self.action.emit("dismiss")
         super().closeEvent(e)
 
-    def keyPressEvent(self, e):
-        if e.key() == Qt.Key.Key_Escape:
-            self._finish("dismiss")
-
-    # ---- painting: soft shadow + paper card
+    # ---- painting: shadow, paper card, marching hazard stripe
     def paintEvent(self, _):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        card = QRectF(SHADOW, SHADOW, self.width() - SHADOW * 2, self.height() - SHADOW * 2)
+        card = QRectF(SHADOW, SHADOW, CARD_W, CARD_H)
         p.setPen(Qt.PenStyle.NoPen)
         for i in range(SHADOW):
-            p.setBrush(QColor(0, 0, 0, int(3.2 * (1 - i / SHADOW) ** 2 + 0.4)))
-            p.drawRoundedRect(card.adjusted(-i, -i + 6, i, i + 6), 24 + i, 24 + i)
+            p.setBrush(QColor(0, 0, 0, int(4.2 * (1 - i / SHADOW) ** 2 + 0.5)))
+            p.drawRoundedRect(card.adjusted(-i, -i + 8, i, i + 8), 24 + i, 24 + i)
+        path = QPainterPath()
+        path.addRoundedRect(card, 24, 24)
+        p.fillPath(path, QColor(T.BG))
+        p.save()
+        p.setClipPath(path)
+        stripe_h, w = 14, 14
+        p.fillRect(QRectF(card.left(), card.top(), card.width(), stripe_h), QColor(T.INK))
+        p.setBrush(QColor(T.RED))
+        x = card.left() - 40 + self._stripe
+        while x < card.right() + 40:
+            poly = QPainterPath()
+            poly.moveTo(x, card.top() + stripe_h)
+            poly.lineTo(x + w, card.top() + stripe_h)
+            poly.lineTo(x + w + stripe_h, card.top())
+            poly.lineTo(x + stripe_h, card.top())
+            poly.closeSubpath()
+            p.fillPath(poly, QColor(T.RED))
+            x += w * 2
+        p.restore()
         p.setPen(QPen(QColor("#CFCDC6"), 1))
-        p.setBrush(QColor(T.BG))
+        p.setBrush(Qt.BrushStyle.NoBrush)
         p.drawRoundedRect(card, 24, 24)
-        # faint dot grid in the corners
-        p.setPen(Qt.PenStyle.NoPen)
-        p.setBrush(T.qc(T.INK, .08))
-        for y in range(int(card.top()) + 70, int(card.bottom()) - 10, 12):
-            for x in (int(card.left()) + 14, int(card.right()) - 14):
-                p.drawEllipse(x, y, 2, 2)
 
 
 class PopupController:

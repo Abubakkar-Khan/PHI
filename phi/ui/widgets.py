@@ -113,6 +113,8 @@ class PillButton(QAbstractButton):
         else:
             bg, fg = T.mix(T.PAPER, T.SOFT, self._hover), T.INK
             border = T.mix(T.LINE, T.INK, self._hover * .6)
+        if not self.isEnabled():
+            bg, fg, border = T.mix(bg, T.SOFT, .6), T.mix(fg, T.GRAY, .7), QColor(T.LINE)
         p.setBrush(bg)
         p.setPen(QPen(border, 1) if border else Qt.PenStyle.NoPen)
         p.drawRoundedRect(r, r.height() / 2, r.height() / 2)
