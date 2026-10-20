@@ -22,6 +22,7 @@ BROWSERS = {"chrome.exe", "msedge.exe", "brave.exe", "vivaldi.exe", "opera.exe",
 SESSION_GAP = 300      # seconds away from Shorts before a new "session" starts
 HEARTBEAT_MAX_AGE = 9  # extension data older than this is ignored
 FLUSH_EVERY = 10
+DISMISS_RECHECK = 20   # seconds before PHI asks again after the popup's X is clicked
 
 
 class Engine(QObject):
@@ -257,7 +258,10 @@ class Engine(QObject):
             self._extra_session = self._extra_daily = 0.0
             self.bypass_until = max(self.bypass_until, now + 5)
             self.celebrated.emit()
-        elif action in ("more", "dismiss"):
+        elif action == "dismiss":
+            # The X button is not a decision: keep watching and ask again shortly if Shorts is still on.
+            self.bypass_until = max(self.bypass_until, now + DISMISS_RECHECK)
+        elif action == "more":
             if kind in ("shorts", "daily"):
                 today = self.today_seconds("shorts", "youtube")
                 self._extra_session = max(0.0, self._session + extend - self.cfg.get("shorts_limit_min") * 60)
