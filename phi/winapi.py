@@ -8,11 +8,13 @@ from ctypes import wintypes
 from typing import NamedTuple, Optional
 
 IS_WINDOWS = sys.platform == "win32"
+_pid_cache: dict[int, str] = {}
 
 
 class Foreground(NamedTuple):
     exe: str
     pid: int
+    hwnd: int = 0
 
 
 if IS_WINDOWS:
@@ -34,7 +36,6 @@ if IS_WINDOWS:
         _fields_ = [("cbSize", wintypes.UINT), ("dwTime", wintypes.DWORD)]
 
     _PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
-    _pid_cache: dict[int, str] = {}
 
 
 def _exe_for_pid(pid: int) -> Optional[str]:
@@ -69,7 +70,7 @@ def foreground() -> Optional[Foreground]:
     if not pid.value:
         return None
     exe = _exe_for_pid(pid.value)
-    return Foreground(exe, pid.value) if exe else None
+    return Foreground(exe, pid.value, int(hwnd)) if exe else None
 
 
 def idle_seconds() -> float:

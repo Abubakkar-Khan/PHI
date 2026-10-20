@@ -13,6 +13,7 @@ from . import APP_NAME, autostart
 from .db import Settings, Store
 from .engine import Engine
 from .server import Bridge, BridgeServer
+from .urlreader import UrlReader
 from .ui import theme as T
 from .ui.main_window import MainWindow
 from .ui.mascot import ghost_icon
@@ -78,6 +79,16 @@ class Tray:
 def main(argv: list[str] | None = None) -> int:
     argv = sys.argv if argv is None else argv
     background = "--background" in argv
+    if "--selftest" in argv:  # packaging check: can UI Automation load?
+        try:
+            import uiautomation as auto
+            with auto.UIAutomationInitializerInThread():
+                msg = "ok:" + auto.GetRootControl().ControlTypeName
+        except Exception as exc:
+            msg = f"fail:{exc!r}"
+        with open(os.path.join(tempfile.gettempdir(), "phi_selftest.txt"), "w") as fh:
+            fh.write(msg)
+        return 0
 
     app = QApplication(argv)
     app.setApplicationName(APP_NAME)
@@ -100,13 +111,16 @@ def main(argv: list[str] | None = None) -> int:
     server = BridgeServer(bridge)
     server.start()
 
-    engine = Engine(store, cfg, bridge)
+    reader = UrlReader()
+    reader.start()
+    engine = Engine(store, cfg, bridge, reader=reader)
     ctx = Ctx(store, cfg, engine)
     window = MainWindow(ctx)
     popups = PopupController(engine, cfg)
 
     def quit_app():
         engine.stop()
+        reader.stop()
         server.stop()
         tray.tray.hide()
         lock.unlock()

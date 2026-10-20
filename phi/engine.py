@@ -15,6 +15,7 @@ from PySide6.QtCore import QObject, QTimer, Signal
 from . import winapi
 from .db import Settings, Store
 from .server import Bridge
+from .urlreader import UrlReader
 from .utils import host_matches, normalize_host, pretty_app, pretty_site
 
 BROWSERS = {"chrome.exe", "msedge.exe", "brave.exe", "vivaldi.exe", "opera.exe", "firefox.exe", "arc.exe"}
@@ -28,9 +29,10 @@ class Engine(QObject):
     nudge = Signal(dict)        # a popup should be shown
     celebrated = Signal()       # user chose to stop: mascot celebrates
 
-    def __init__(self, store: Store, cfg: Settings, bridge: Bridge, parent=None):
+    def __init__(self, store: Store, cfg: Settings, bridge: Bridge, parent=None, reader: UrlReader | None = None):
         super().__init__(parent)
         self.store, self.cfg, self.bridge = store, cfg, bridge
+        self.reader = reader
         self.own_pid = os.getpid()
 
         self.tracking_paused = False
@@ -126,10 +128,20 @@ class Engine(QObject):
             self._status, mood, label = "idle", "idle", "Away"
         else:
             exe = fg.exe.lower()
-            if exe in BROWSERS and hb and hb["active"] and not hb["incognito"] and hb["host"]:
-                site = normalize_host(hb["host"])
-                shorts = hb["shorts"] and site == "youtube.com"
-            audible = bool(site and hb and hb["audible"])
+            if self.reader:
+                self.reader.set_target(fg.hwnd if exe in BROWSERS and exe != "firefox.exe" else 0)
+            src = None
+            if exe in BROWSERS:
+                if hb and hb["active"]:
+                    src = hb
+                elif self.reader:
+                    src = self.reader.latest(fg.hwnd)
+            if src and not src["incognito"] and src["host"]:
+                hb = src
+                site = normalize_host(src["host"])
+                shorts = bool(src["shorts"]) and site == "youtube.com"
+                link = True
+            audible = bool(site and hb and hb.get("audible"))
             active = idle < self.cfg.get("idle_threshold_s") or audible
 
             if fg.pid == self.own_pid:
@@ -173,7 +185,7 @@ class Engine(QObject):
 
     # ---- shorts rules ----------------------------------------------------
     def _count_swipes(self, hb: dict, hour: int) -> None:
-        tab, n = hb["tabId"], hb["swipes"]
+        tab, n = hb.get("tabId", 0) or hb.get("hwnd", 0), hb["swipes"]
         prev = self._last_swipes.get(tab)
         self._last_swipes[tab] = n
         if prev is None:
