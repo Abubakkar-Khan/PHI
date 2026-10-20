@@ -22,6 +22,10 @@ if IS_WINDOWS:
     kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
 
     user32.GetForegroundWindow.restype = wintypes.HWND
+    user32.GetAncestor.argtypes = [wintypes.HWND, wintypes.UINT]
+    user32.GetAncestor.restype = wintypes.HWND
+    user32.GetWindowTextW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
+    user32.GetWindowTextW.restype = ctypes.c_int
     user32.GetWindowThreadProcessId.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
     user32.GetWindowThreadProcessId.restype = wintypes.DWORD
     kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
@@ -101,3 +105,18 @@ def send_ctrl_w() -> None:
     user32.keybd_event(VK_W, 0, 0, 0)
     user32.keybd_event(VK_W, 0, KEYUP, 0)
     user32.keybd_event(VK_CONTROL, 0, KEYUP, 0)
+
+def root_owner(hwnd: int) -> int:
+    """The top-level owner window (a browser popup/menu maps to the main browser window)."""
+    if not (IS_WINDOWS and hwnd):
+        return 0
+    return int(user32.GetAncestor(hwnd, 3) or 0)   # GA_ROOTOWNER
+
+
+def window_title(hwnd: int) -> str:
+    """Title text of a window (used only as a cheap 'something changed' signal; never stored)."""
+    if not (IS_WINDOWS and hwnd):
+        return ""
+    buf = ctypes.create_unicode_buffer(256)
+    user32.GetWindowTextW(hwnd, buf, 256)
+    return buf.value

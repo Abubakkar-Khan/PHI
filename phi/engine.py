@@ -63,14 +63,20 @@ class Engine(QObject):
         self.timer = QTimer(self)
         self.timer.setInterval(500)
         self.timer.timeout.connect(self._tick)
+        self._title_key = None
+        self.watch = QTimer(self)
+        self.watch.setInterval(150)
+        self.watch.timeout.connect(self._watch_title)
 
     # ---- lifecycle ----------------------------------------------------
     def start(self) -> None:
         self._last = time.time()
         self.timer.start()
+        self.watch.start()
 
     def stop(self) -> None:
         self.timer.stop()
+        self.watch.stop()
         self.flush()
 
     def _load_today(self) -> None:
@@ -109,6 +115,22 @@ class Engine(QObject):
         return any(host_matches(host, d) for d in self.cfg.get("excluded_sites"))
 
     # ---- main tick -----------------------------------------------------
+    def _watch_title(self) -> None:
+        """Every navigation and Short swipe changes the browser's window title: use that as a trigger
+        to read the address bar immediately and re-evaluate, instead of waiting for the next poll."""
+        if not self.reader or self.tracking_paused:
+            return
+        fg = winapi.foreground()
+        if not fg or fg.exe.lower() not in BROWSERS or fg.exe.lower() == "firefox.exe":
+            return
+        key = (fg.hwnd, winapi.window_title(fg.hwnd))
+        if key != self._title_key:
+            self._title_key = key
+            self._browser_hwnd = fg.hwnd
+            self.reader.set_target(fg.hwnd)
+            self.reader.poke()
+            QTimer.singleShot(250, self._tick)
+
     def log(self, msg: str) -> None:
         try:
             path = os.path.join(data_dir(), "phi.log")
@@ -192,6 +214,10 @@ class Engine(QObject):
                 elif site:
                     self._check_site(site, label)
 
+        rs = self.reader.status if (self.reader and fg and fg.exe.lower() in BROWSERS) else None
+        if rs and rs != getattr(self, "_last_rs", None):
+            self._last_rs = rs
+            self.log(f"reader: {rs}")
         sig = (self._status, label)
         if sig != getattr(self, "_last_sig", None):
             self._last_sig = sig
