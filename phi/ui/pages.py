@@ -5,9 +5,9 @@ import os
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 
-from PySide6.QtCore import Qt, QUrl
+from PySide6.QtCore import QEasingCurve, QPropertyAnimation, Qt, QTimer, QUrl
 from PySide6.QtGui import QDesktopServices
-from PySide6.QtWidgets import (QHBoxLayout, QLabel, QLineEdit, QScrollArea, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QGraphicsOpacityEffect, QHBoxLayout, QLabel, QLineEdit, QScrollArea, QVBoxLayout, QWidget)
 
 from .. import autostart
 from ..db import Settings, Store
@@ -45,6 +45,9 @@ def display_name(kind: str, name: str) -> str:
 class Page(QWidget):
     def refresh(self) -> None:  # overridden
         pass
+
+    def enter(self) -> None:
+        """Play the page's entrance (staggered count-ups, growing bars). Called when the page becomes visible."""
 
 
 # ======================================================================== TODAY
@@ -108,7 +111,15 @@ class TodayPage(Page):
         self.top_layout.addStretch(1)
         bottom.addWidget(top_panel, 3)
         v.addLayout(bottom, 1)
-        self._top_sig = None
+        self._top_keys: list | None = None
+        self._top_widgets: list[TopRow] = []
+
+    def enter(self) -> None:
+        for i, c in enumerate((self.c_active, self.c_shorts, self.c_nudges)):
+            c.replay(i * 70)
+        self.timeline.replay()
+        for i, row in enumerate(self._top_widgets):
+            row.replay(180 + i * 70)
 
     def refresh(self) -> None:
         eng, s = self.ctx.engine, self.ctx.store
@@ -153,20 +164,21 @@ class TodayPage(Page):
             rows.append((display_name(kind, nm), s.hourly(today.isoformat(), kind, nm), False))
         self.timeline.set_rows(rows)
 
-        sig = [(k, n, int(sec // 60)) for k, n, sec in items[:5]]
-        if sig != self._top_sig:
-            self._top_sig = sig
-            self._fill_top(items[:5], total)
+        self._fill_top(items[:5], total)
 
         # header status
         self.update_status(getattr(self, "_last_snap", None))
 
     def _ranked(self, day: str):
-        s = self.ctx.store
-        self.ctx.engine.flush()
-        return s.by_name(day, day, ("app", "site"))
+        return self.ctx.store.by_name(day, day, ("app", "site"))
 
     def _fill_top(self, items, total):
+        keys = [(k, n) for k, n, _ in items]
+        if keys == self._top_keys:                     # same apps in the same order: just update the numbers
+            for row, (_k, _n, secs) in zip(self._top_widgets, items):
+                row.set_secs(secs)
+            return
+        self._top_keys, self._top_widgets = keys, []
         while self.top_rows.count():
             w = self.top_rows.takeAt(0).widget()
             if w:
@@ -175,7 +187,7 @@ class TodayPage(Page):
             empty = QWidget()
             lay = QVBoxLayout(empty)
             lay.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            m = Mascot(px=4, mood="monitoring", fill=T.SURFACE)
+            m = Mascot(px=3, mood="idle", fill=T.SURFACE)
             lay.addWidget(m, 0, Qt.AlignmentFlag.AlignHCenter)
             lay.addWidget(mk_label("Nothing logged yet.", T.sans(13, T.QFont.Weight.Medium), T.INK, Qt.AlignmentFlag.AlignHCenter))
             lay.addWidget(mk_label("PHI is watching quietly_", T.mono(10), T.GRAY, Qt.AlignmentFlag.AlignHCenter))
@@ -183,6 +195,7 @@ class TodayPage(Page):
             return
         for i, (kind, nm, secs) in enumerate(items):
             row = TopRow(display_name(kind, nm), kind, secs, delay=i * 70)
+            self._top_widgets.append(row)
             self.top_rows.addWidget(row)
 
     def update_status(self, snap: dict | None) -> None:
@@ -221,19 +234,38 @@ class TopRow(QWidget):
         col.addWidget(mk_label(name, T.sans(13, T.QFont.Weight.Medium)))
         col.addWidget(mk_label(kind.upper(), T.mono(9, spacing=1.2), T.GRAY))
         lay.addLayout(col, 1)
-        lay.addWidget(mk_label(fmt_dur(secs), T.mono(12, T.QFont.Weight.Medium), T.INK, Qt.AlignmentFlag.AlignRight))
-        from PySide6.QtCore import QTimer
-        from PySide6.QtWidgets import QGraphicsOpacityEffect
-        from PySide6.QtCore import QPropertyAnimation
+        self.time_lbl = mk_label(fmt_dur(secs), T.mono(12, T.QFont.Weight.Medium), T.INK, Qt.AlignmentFlag.AlignRight)
+        lay.addWidget(self.time_lbl)
+        self._secs_text = self.time_lbl.text()
+        self._delay = QTimer(self)
+        self._delay.setSingleShot(True)
+        self._delay.timeout.connect(self._fade_in)
+        self.replay(delay)
+
+    def set_secs(self, secs: float) -> None:
+        text = fmt_dur(secs)
+        if text != self._secs_text:
+            self._secs_text = text
+            self.time_lbl.setText(text)
+
+    def replay(self, delay: int = 0) -> None:
+        """Fade in. The effect lives only for the fade (these rows are tiny, so it is cheap)."""
         eff = QGraphicsOpacityEffect(self)
-        eff.setOpacity(0)
+        eff.setOpacity(0.0)
         self.setGraphicsEffect(eff)
-        self._a = QPropertyAnimation(eff, b"opacity", self)
-        self._a.setDuration(380)
-        self._a.setStartValue(0.0)
-        self._a.setEndValue(1.0)
-        self._a.finished.connect(lambda: self.setGraphicsEffect(None))
-        QTimer.singleShot(delay, self._a.start)
+        self._delay.start(max(0, delay))
+
+    def _fade_in(self) -> None:
+        eff = self.graphicsEffect()
+        if eff is None:
+            return
+        a = QPropertyAnimation(eff, b"opacity", self)
+        a.setDuration(380)
+        a.setStartValue(0.0)
+        a.setEndValue(1.0)
+        a.setEasingCurve(QEasingCurve.Type.OutCubic)
+        a.finished.connect(lambda: self.setGraphicsEffect(None))
+        a.start(QPropertyAnimation.DeletionPolicy.DeleteWhenStopped)
 
 
 # ======================================================================== APPS & SITES
@@ -294,11 +326,17 @@ class AppsPage(Page):
 
         self.range_seg.changed.connect(lambda _: self.refresh(True))
         self.kind_seg.changed.connect(lambda _: self.refresh(True))
-        self._sig = None
+        self._keys: list | None = None
+        self._rows_w: list[UsageRow] = []
+
+    def enter(self) -> None:
+        self.chart.replay()
+        for i, row in enumerate(self._rows_w):
+            row.replay(60 + 40 * i)
 
     def refresh(self, force: bool = False) -> None:
-        s, eng = self.ctx.store, self.ctx.engine
-        eng.flush()
+        s = self.ctx.store
+        self.ctx.engine.flush()        # cheap now (WAL + synchronous=NORMAL); the page reads from the database
         today = date.today()
         week = self.range_seg.index == 1
         days = 7 if week else 1
@@ -315,28 +353,33 @@ class AppsPage(Page):
             sh = s.hourly(today.isoformat(), "shorts", "youtube")
             cols = [(f"{h:02d}" if h % 3 == 0 else "", hours[h], sh[h], h == datetime.now().hour) for h in range(24)]
             self.sum_lbl.setText(f"TOTAL {fmt_dur(sum(hours))}  ·  SHORTS {fmt_dur(sum(sh))}")
-        self.chart.set_columns(cols)
+        self.chart.set_columns(cols, replay=force)
 
         kinds = {0: ("app", "site"), 1: ("app",), 2: ("site",)}[self.kind_seg.index]
         data = s.by_name(d0.isoformat(), today.isoformat(), kinds)
         shorts_total = sum(s.daily_series(today, days, "shorts", "youtube"))
-        sig = (week, self.kind_seg.index, [(k, n, int(sec // 30)) for k, n, sec in data], int(shorts_total // 30))
-        if sig == self._sig and not force:
+        denom = max(sum(sec for _, _, sec in data), 1.0)
+        entries = []                                   # (key, name, tag, seconds, share, red)
+        if shorts_total >= 1 and self.kind_seg.index != 1:
+            entries.append((("shorts", "youtube"), "YouTube Shorts", "inside youtube", shorts_total, min(1.0, shorts_total / denom), True))
+        for kind, nm, sec in data:
+            entries.append(((kind, nm), display_name(kind, nm), kind, sec, sec / denom, False))
+
+        keys = [e[0] for e in entries]
+        if keys == self._keys and not force:           # same rows: slide the bars and numbers, rebuild nothing
+            for row, e in zip(self._rows_w, entries):
+                row.set_values(e[3], e[4])
             return
-        self._sig = sig
+        self._keys, self._rows_w = keys, []
         while self.rows.count() > 1:
             w = self.rows.takeAt(0).widget()
             if w:
                 w.deleteLater()
-        denom = max(sum(sec for _, _, sec in data), 1.0)
-        idx = 0
-        if shorts_total >= 1 and self.kind_seg.index != 1:
-            self.rows.insertWidget(idx, UsageRow("YouTube Shorts", "inside youtube", shorts_total, min(1.0, shorts_total / denom), True, 0))
-            idx += 1
-        for kind, nm, sec in data:
-            self.rows.insertWidget(idx, UsageRow(display_name(kind, nm), kind, sec, sec / denom, False, 40 * (idx + 1)))
-            idx += 1
-        if idx == 0:
+        for idx, (_key, name, tag, sec, share, red) in enumerate(entries):
+            row = UsageRow(name, tag, sec, share, red, 40 * (idx + 1))
+            self._rows_w.append(row)
+            self.rows.insertWidget(idx, row)
+        if not entries:
             self.rows.insertWidget(0, mk_label("Nothing here yet. Use your computer and come back_", T.mono(11), T.GRAY, Qt.AlignmentFlag.AlignCenter))
 
 

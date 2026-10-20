@@ -9,6 +9,7 @@ PAPER = "#FCFBF9"
 INK = "#171717"
 GRAY = "#777777"
 RED = "#E53935"
+ORANGE = "#FF6B1A"   # the mascot's plus sign; used sparingly for sparks
 LINE = "#DAD8D1"
 SOFT = "#E6E4DE"
 

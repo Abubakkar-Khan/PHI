@@ -99,6 +99,8 @@ def main(argv: list[str] | None = None) -> int:
     lock = QLockFile(os.path.join(tempfile.gettempdir(), "phi-app.lock"))
     lock.setStaleLockTime(0)
     if not lock.tryLock(200):
+        from PySide6.QtWidgets import QMessageBox
+        QMessageBox.information(None, "PHI", "PHI is already running. Look for the ghost icon in the system tray (click the ^ arrow).")
         return 0  # already running
 
     store = Store()

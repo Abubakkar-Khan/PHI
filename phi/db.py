@@ -73,6 +73,9 @@ class Store:
         self.conn = sqlite3.connect(self.path, check_same_thread=False)
         with self.lock:
             self.conn.execute("PRAGMA journal_mode=WAL")
+            # WAL + NORMAL never corrupts; a power cut can only lose the last moments of stats. It also keeps
+            # the 10s flush from stalling the UI thread on fsync.
+            self.conn.execute("PRAGMA synchronous=NORMAL")
             self.conn.executescript(SCHEMA)
             self.conn.commit()
 

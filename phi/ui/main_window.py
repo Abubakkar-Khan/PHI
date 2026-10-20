@@ -3,12 +3,13 @@ from __future__ import annotations
 
 import random
 
-from PySide6.QtCore import QEasingCurve, QPointF, QPropertyAnimation, QRectF, Qt, QTimer
+from PySide6.QtCore import QPointF, QRectF, Qt, QTimer
 from PySide6.QtGui import QColor, QImage, QPainter, QPainterPath, QPen, QPixmap
-from PySide6.QtWidgets import (QGraphicsOpacityEffect, QHBoxLayout, QSizeGrip, QStackedWidget, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import QHBoxLayout, QSizeGrip, QStackedWidget, QVBoxLayout, QWidget
 
 from . import theme as T
 from .mascot import Mascot, WordMark, ghost_icon
+from .motion import Spring, Ticker, burst, float_text
 from .pages import AppsPage, Ctx, Page, SettingsPage, TodayPage, mk_label
 from .widgets import animator, label_font_paint, run
 
@@ -53,13 +54,12 @@ class Sidebar(QWidget):
         self.setFixedWidth(212)
         self.on_select = on_select
         self.index = 0
-        self._y = float(self.TOP)
+        self._ys = Spring(float(self.TOP), 260.0, 21.0)      # the selection pill rides a spring
         self._hover = [0.0] * len(self.ITEMS)
         self._hover_idx = -1
         self.setMouseTracking(True)
-        self._slide = animator(self, self._set_y, 320, QEasingCurve.Type.OutBack)
         self._hv = animator(self, self._tick_hover, 140)
-        self._from_y = self._y
+        self._tk = Ticker(self._spring_step)
 
         self.wordmark = WordMark(3.0, parent=self)
         self.wordmark.move(22, 26)
@@ -67,14 +67,20 @@ class Sidebar(QWidget):
         self.mascot = self.panel.mascot
 
     def resizeEvent(self, e):
-        self.panel.setGeometry(14, self.height() - 168, self.width() - 28, 154)
+        h = _MascotPanel.HEIGHT
+        self.panel.setGeometry(14, self.height() - h - 14, self.width() - 28, h)
 
     def _row_y(self, i):
         return self.TOP + i * (self.ROW_H + self.GAP)
 
-    def _set_y(self, v):
-        self._y = self._from_y + (self._row_y(self.index) - self._from_y) * v
-        self.update()
+    @property
+    def _y(self) -> float:
+        return self._ys.x
+
+    def _spring_step(self, dt: float) -> bool:
+        self._ys.step(dt)
+        self.update(0, 0, self.width(), self._row_y(len(self.ITEMS)) + 8)
+        return self.isVisible() and not self._ys.resting
 
     def _tick_hover(self, v):
         for i in range(len(self._hover)):
@@ -85,9 +91,9 @@ class Sidebar(QWidget):
     def select(self, i: int, emit: bool = True):
         if i == self.index:
             return
-        self._from_y = self._y
         self.index = i
-        run(self._slide, 0, 1)
+        self._ys.target = float(self._row_y(i))
+        self._tk.wake()
         if emit:
             self.on_select(i)
 
@@ -123,10 +129,11 @@ class Sidebar(QWidget):
                 p.setPen(Qt.PenStyle.NoPen)
                 p.setBrush(T.qc(T.SOFT, self._hover[i]))
                 p.drawRoundedRect(QRectF(14, self._row_y(i), self.width() - 28, self.ROW_H), 11, 11)
-        # selected pill (animated)
+        # selected pill: springs between rows and stretches a little while it travels
+        stretch = min(7.0, abs(self._ys.v) * 0.012)
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(QColor(T.INK))
-        p.drawRoundedRect(QRectF(14, self._y, self.width() - 28, self.ROW_H), 11, 11)
+        p.drawRoundedRect(QRectF(14, self._y - stretch / 2, self.width() - 28, self.ROW_H + stretch), 11, 11)
         for i, (kind, text) in enumerate(self.ITEMS):
             y = self._row_y(i)
             near = max(0.0, 1 - abs(y - self._y) / (self.ROW_H + self.GAP))
@@ -139,35 +146,45 @@ class Sidebar(QWidget):
 
 
 class _MascotPanel(QWidget):
+    """Home of the sidebar mascot. The card is painted once into a pixmap, so 60 fps mascot frames stay cheap."""
+    HEIGHT = 204
+
     def __init__(self, parent):
         super().__init__(parent)
         self.mascot = Mascot(px=4, mood="monitoring", fill=T.PAPER, parent=self)
-        self.setMouseTracking(True)
-        self._poke = 0
-        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._bg: QPixmap | None = None
+        self._bg_key = None
 
     def resizeEvent(self, e):
-        self.mascot.move((self.width() - self.mascot.width()) // 2, 10)
+        self.mascot.move((self.width() - self.mascot.width()) // 2, 6)
 
-    def mousePressEvent(self, e):  # click the ghost: it hops
-        prev = self.mascot.mood
-        self.mascot.set_mood("celebrate")
-        QTimer.singleShot(900, lambda: self.mascot.set_mood(prev if prev != "celebrate" else "monitoring"))
+    def _background(self) -> QPixmap:
+        dpr = self.devicePixelRatioF()
+        key = (self.width(), self.height(), dpr)
+        if self._bg_key != key:
+            pm = QPixmap(int(self.width() * dpr), int(self.height() * dpr))
+            pm.setDevicePixelRatio(dpr)
+            pm.fill(Qt.GlobalColor.transparent)
+            p = QPainter(pm)
+            p.setRenderHint(QPainter.RenderHint.Antialiasing)
+            p.setPen(QPen(QColor(T.LINE), 1))
+            p.setBrush(QColor(T.SURFACE))
+            p.drawRoundedRect(QRectF(self.rect()).adjusted(.5, .5, -.5, -.5), 14, 14)
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(T.qc(T.INK, .10))
+            for y in range(10, self.height() - 6, 10):
+                for x in range(10, self.width() - 6, 10):
+                    p.drawEllipse(QPointF(x, y), .9, .9)
+            label_font_paint(p, QRectF(0, self.height() - 44, self.width(), 14), "SMALL SCROLLS", T.mono(9, spacing=1.6), T.GRAY, Qt.AlignmentFlag.AlignCenter)
+            label_font_paint(p, QRectF(0, self.height() - 30, self.width(), 14), "BIG LOSSES_", T.mono(9, T.QFont.Weight.Medium, 1.6), T.INK, Qt.AlignmentFlag.AlignCenter)
+            p.end()
+            self._bg, self._bg_key = pm, key
+        return self._bg
 
-    def paintEvent(self, _):
+    def paintEvent(self, ev):
         p = QPainter(self)
-        p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        p.setPen(QPen(QColor(T.LINE), 1))
-        p.setBrush(QColor(T.SURFACE))
-        r = QRectF(self.rect()).adjusted(.5, .5, -.5, -.5)
-        p.drawRoundedRect(r, 14, 14)
-        p.setPen(Qt.PenStyle.NoPen)
-        p.setBrush(T.qc(T.INK, .10))
-        for y in range(10, self.height() - 6, 10):
-            for x in range(10, self.width() - 6, 10):
-                p.drawEllipse(QPointF(x, y), .9, .9)
-        label_font_paint(p, QRectF(0, self.height() - 44, self.width(), 14), "SMALL SCROLLS", T.mono(9, spacing=1.6), T.GRAY, Qt.AlignmentFlag.AlignCenter)
-        label_font_paint(p, QRectF(0, self.height() - 30, self.width(), 14), "BIG LOSSES_", T.mono(9, T.QFont.Weight.Medium, 1.6), T.INK, Qt.AlignmentFlag.AlignCenter)
+        p.setClipRegion(ev.region())
+        p.drawPixmap(0, 0, self._background())
 
 
 # ------------------------------------------------------------------ title bar
@@ -246,6 +263,7 @@ class MainWindow(QWidget):
         self.setMinimumSize(900, 640)
         self.resize(1060, 720)
         self._grain = _grain()
+        self._shown_once = self._was_hidden = False
 
         root = QHBoxLayout(self)
         root.setContentsMargins(1, 1, 1, 1)
@@ -279,36 +297,42 @@ class MainWindow(QWidget):
         self.showNormal() if self.isMaximized() else self.showMaximized()
 
     def showEvent(self, e):
+        first = not self._shown_once
+        self._shown_once = True
         self._timer.start()
         self._refresh()
+        self.sidebar.mascot.resume()
         super().showEvent(e)
+        if first or self._was_hidden:
+            QTimer.singleShot(0, self.pages[self.stack.currentIndex()].enter)
+        self._was_hidden = False
 
     def hideEvent(self, e):
         self._timer.stop()
+        self.sidebar.mascot.pause()                 # nothing animates while PHI sits in the tray
+        self._was_hidden = True
         super().hideEvent(e)
 
     def _refresh(self):
         self.pages[self.stack.currentIndex()].refresh()
 
     def _go(self, i: int):
-        old = self.stack.currentWidget()
+        """Switch pages instantly, then let the page animate itself in.
+
+        The old cross-fade re-rendered the whole page every frame (about 20 ms), which dropped frames; staggering
+        the contents in costs almost nothing and reads as more alive.
+        """
         self.stack.setCurrentIndex(i)
-        new = self.stack.currentWidget()
-        new.refresh()
-        eff = QGraphicsOpacityEffect(new)
-        new.setGraphicsEffect(eff)
-        a = QPropertyAnimation(eff, b"opacity", new)
-        a.setDuration(260)
-        a.setStartValue(0.0)
-        a.setEndValue(1.0)
-        a.setEasingCurve(QEasingCurve.Type.OutCubic)
-        a.finished.connect(lambda: new.setGraphicsEffect(None))
-        a.start()
-        self._fade = a
+        page = self.stack.currentWidget()
+        page.refresh()
+        page.enter()
 
     def _celebrate(self):
         self._celebrating = True
         self.sidebar.mascot.set_mood("celebrate")
+        mp = self.sidebar.panel
+        burst(mp, "confetti", QPointF(mp.width() / 2, 70))
+        float_text(mp, "+1 STOPPED", QPointF(mp.width() / 2, 30))
         QTimer.singleShot(3000, self._end_celebrate)
 
     def _end_celebrate(self):

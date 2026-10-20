@@ -20,6 +20,7 @@ from PySide6.QtWidgets import QHBoxLayout, QVBoxLayout, QWidget
 from ..utils import fmt_clock, fmt_dur, minutes_text
 from . import theme as T
 from .mascot import RingMascot
+from .motion import burst, float_text
 from .pages import mk_label
 from .lockscreen import LockScreen
 from .widgets import LinkButton, PillButton
@@ -167,7 +168,7 @@ class NudgePopup(QWidget):
         top.addWidget(x)
         root.addLayout(top)
 
-        self.ring = RingMascot(188, 5, "alert")
+        self.ring = RingMascot(188, 3, "alert")
         root.addWidget(self.ring, 0, Qt.AlignmentFlag.AlignHCenter)
 
         self.big = mk_label("", T.mono(54, T.QFont.Weight.Bold), T.RED, Qt.AlignmentFlag.AlignHCenter)
@@ -304,6 +305,9 @@ class NudgePopup(QWidget):
             b.setEnabled(False)
         if action == "stop":
             self.ring.set_mood("celebrate")
+            burst(self.ring, "confetti", None, scale=1.1)
+            burst(self.ring, "ring", None, [T.RED, T.ORANGE], 0.9)
+            float_text(self.ring, "+1 STOPPED", None)
             self.big.setText("✓")
             self.big.setStyleSheet(f"color:{T.INK}; background:transparent;")
             self.title.setText("Nice. Back to it.")
