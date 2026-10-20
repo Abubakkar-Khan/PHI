@@ -53,6 +53,7 @@ class Engine(QObject):
         self._extra_site: dict[str, float] = defaultdict(float)
         self._last_swipes: dict[int, int] = {}
         self._status = "monitoring"
+        self._browser_hwnd = 0
 
         self._load_today()
         self.timer = QTimer(self)
@@ -128,6 +129,8 @@ class Engine(QObject):
             self._status, mood, label = "idle", "idle", "Away"
         else:
             exe = fg.exe.lower()
+            if exe in BROWSERS:
+                self._browser_hwnd = fg.hwnd
             if self.reader:
                 self.reader.set_target(fg.hwnd if exe in BROWSERS and exe != "firefox.exe" else 0)
             src = None
@@ -244,8 +247,15 @@ class Engine(QObject):
 
         if action == "stop":
             match = "shorts" if kind in ("shorts", "daily") else payload["domain"]
-            self.bridge.queue_command({"type": "close", "match": match})
-            self.bypass_until = max(self.bypass_until, now + 60)  # grace period if the tab could not be closed
+            if self.bridge.fresh(12):
+                self.bridge.queue_command({"type": "close", "match": match})   # extension closes the tab
+            else:
+                QTimer.singleShot(150, lambda: self._close_by_keys(match))      # no extension: Ctrl+W
+            # fresh start: reopening Shorts is a new session and is checked again right away
+            self._session = 0.0
+            self._last_shorts = 0.0
+            self._extra_session = self._extra_daily = 0.0
+            self.bypass_until = max(self.bypass_until, now + 5)
             self.celebrated.emit()
         elif action in ("more", "dismiss"):
             if kind in ("shorts", "daily"):
@@ -261,3 +271,18 @@ class Engine(QObject):
             self.reminders_paused_until = now + self.cfg.get("pause_min") * 60
         elif action == "bypass":
             self.bypass_until = now + self.cfg.get("bypass_min") * 60
+
+    # ---- closing without the extension -------------------------------------
+    def _close_by_keys(self, match: str) -> None:
+        """Close the active tab with Ctrl+W, but only if it is still the page the nudge was about."""
+        hwnd = self._browser_hwnd
+        if not (hwnd and self.reader):
+            return
+        res = self.reader.latest(hwnd, max_age=6.0)
+        if not res:
+            return
+        ok = res["shorts"] if match == "shorts" else host_matches(normalize_host(res["host"]), match)
+        if not ok:
+            return
+        winapi.focus(hwnd)
+        QTimer.singleShot(200, winapi.send_ctrl_w)

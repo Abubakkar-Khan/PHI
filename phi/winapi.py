@@ -83,3 +83,21 @@ def idle_seconds() -> float:
         return 0.0
     elapsed = (kernel32.GetTickCount() - info.dwTime) & 0xFFFFFFFF
     return elapsed / 1000.0
+
+
+def focus(hwnd: int) -> None:
+    """Bring a window to the foreground (allowed right after the user clicked one of our windows)."""
+    if IS_WINDOWS and hwnd:
+        user32.ShowWindow(hwnd, 9)  # SW_RESTORE, no-op if already normal
+        user32.SetForegroundWindow(hwnd)
+
+
+def send_ctrl_w() -> None:
+    """Ctrl+W to the focused window: closes the active browser tab. Sends no other keys."""
+    if not IS_WINDOWS:
+        return
+    VK_CONTROL, VK_W, KEYUP = 0x11, 0x57, 0x0002
+    user32.keybd_event(VK_CONTROL, 0, 0, 0)
+    user32.keybd_event(VK_W, 0, 0, 0)
+    user32.keybd_event(VK_W, 0, KEYUP, 0)
+    user32.keybd_event(VK_CONTROL, 0, KEYUP, 0)

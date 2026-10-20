@@ -67,7 +67,7 @@ class NudgePopup(QWidget):
         self._seconds = payload["seconds"]
         self._typed = 0
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.Tool
-                            | Qt.WindowType.NoDropShadowWindowHint)
+                            | Qt.WindowType.NoDropShadowWindowHint | Qt.WindowType.WindowDoesNotAcceptFocus)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
         self.setFixedSize(460 + SHADOW * 2, 560 + SHADOW * 2)
