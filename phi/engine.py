@@ -20,7 +20,7 @@ from .urlreader import UrlReader
 from .utils import host_matches, normalize_host, pretty_app, pretty_site
 
 BROWSERS = {"chrome.exe", "msedge.exe", "brave.exe", "vivaldi.exe", "opera.exe", "firefox.exe", "arc.exe"}
-SESSION_GAP = 300      # seconds away from Shorts before a new "session" starts
+SESSION_GAP = 4        # seconds away from Shorts that end a session (reopening Shorts = fresh check)
 HEARTBEAT_MAX_AGE = 9  # extension data older than this is ignored
 FLUSH_EVERY = 10
 DISMISS_RECHECK = 20   # seconds before PHI asks again after the popup's X is clicked
@@ -321,6 +321,7 @@ class Engine(QObject):
             # The X button is not a decision: keep watching and ask again shortly if Shorts is still on.
             self.bypass_until = max(self.bypass_until, now + DISMISS_RECHECK)
         elif action == "more":
+            self._last_shorts = now   # time spent on the lock screen must not end the session
             if kind in ("shorts", "daily"):
                 today = self.today_seconds("shorts", "youtube")
                 self._extra_session = max(0.0, self._session + extend - self.cfg.get("shorts_limit_min") * 60)
