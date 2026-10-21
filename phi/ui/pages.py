@@ -6,8 +6,8 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 
 from PySide6.QtCore import QEasingCurve, QPropertyAnimation, Qt, QTimer, QUrl
-from PySide6.QtGui import QDesktopServices
-from PySide6.QtWidgets import (QGraphicsOpacityEffect, QHBoxLayout, QLabel, QLineEdit, QScrollArea, QVBoxLayout, QWidget)
+from PySide6.QtGui import QColor, QDesktopServices, QPainter, QPen
+from PySide6.QtWidgets import (QColorDialog, QGraphicsOpacityEffect, QHBoxLayout, QLabel, QLineEdit, QScrollArea, QVBoxLayout, QWidget)
 
 from .. import autostart
 from ..db import Settings, Store
@@ -26,7 +26,7 @@ class Ctx:
     engine: Engine
 
 
-def mk_label(text: str, font, color: str = T.INK, align=Qt.AlignmentFlag.AlignLeft) -> QLabel:
+def mk_label(text: str, font, color: str | None = None, align=Qt.AlignmentFlag.AlignLeft) -> QLabel:
     lb = QLabel(text)
     lb.setFont(font)
     lb.setStyleSheet(f"color:{color}; background:transparent;")
@@ -34,8 +34,8 @@ def mk_label(text: str, font, color: str = T.INK, align=Qt.AlignmentFlag.AlignLe
     return lb
 
 
-def caps(text: str, color: str = T.GRAY) -> QLabel:
-    return mk_label(text.upper(), T.mono(10, spacing=1.4), color)
+def caps(text: str, color: str | None = None) -> QLabel:
+    return mk_label(text.upper(), T.mono(10, spacing=1.4), color or T.GRAY)
 
 
 def display_name(kind: str, name: str) -> str:
@@ -384,6 +384,43 @@ class AppsPage(Page):
 
 
 # ======================================================================== SETTINGS
+class Swatch(QWidget):
+    """A colour chip with its hex value; click to pick a new colour."""
+
+    def __init__(self, color: str, title: str, on_pick):
+        super().__init__()
+        self.color, self.title, self.on_pick = color, title, on_pick
+        self.setFixedSize(132, 30)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._hover = False
+
+    def enterEvent(self, e):
+        self._hover = True
+        self.update()
+
+    def leaveEvent(self, e):
+        self._hover = False
+        self.update()
+
+    def mouseReleaseEvent(self, e):
+        picked = QColorDialog.getColor(QColor(self.color), self.window(), self.title)
+        if picked.isValid() and picked.name().lower() != self.color.lower():
+            self.on_pick(picked.name())
+
+    def paintEvent(self, _):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p.setPen(QPen(QColor(T.INK if self._hover else T.LINE), 1))
+        p.setBrush(QColor(T.PAPER))
+        p.drawRoundedRect(self.rect().adjusted(0, 0, -1, -1), 8, 8)
+        p.setPen(QPen(QColor(T.EDGE), 1))
+        p.setBrush(QColor(self.color))
+        p.drawEllipse(8, 6, 18, 18)
+        p.setFont(T.mono(12))
+        p.setPen(QColor(T.INK))
+        p.drawText(self.rect().adjusted(34, 0, 0, 0), int(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft), self.color.upper())
+
+
 class SettingRow(QWidget):
     def __init__(self, title: str, desc: str, control: QWidget, last: bool = False):
         super().__init__()
@@ -458,6 +495,22 @@ class SettingsPage(Page):
         v.addWidget(mk_label("Settings", T.sans(26, T.QFont.Weight.Medium)))
         v.addWidget(mk_label("Changes apply instantly. Everything stays on this computer.", T.sans(13), T.GRAY))
         v.addSpacing(6)
+
+        # --- appearance
+        v.addWidget(caps("Appearance"))
+        mode = cfg.get("theme_mode")
+        seg = Segmented(["Light", "Dark", "Custom"])
+        seg.set_index(["light", "dark", "custom"].index(mode) if mode in ("light", "dark", "custom") else 0)
+        seg.changed.connect(lambda i: cfg.set("theme_mode", ["light", "dark", "custom"][i]))
+        rows = [SettingRow("Theme", "Applies to the app, the lock screen and the popup.", seg, last=(mode != "custom"))]
+        if mode == "custom":
+            rows += [
+                SettingRow("Background", "", Swatch(cfg.get("theme_bg"), "Background colour", lambda c: cfg.set("theme_bg", c))),
+                SettingRow("Text", "", Swatch(cfg.get("theme_text"), "Text colour", lambda c: cfg.set("theme_text", c))),
+                SettingRow("Accent", "Warnings, the timer, small highlights.", Swatch(cfg.get("theme_accent"), "Accent colour", lambda c: cfg.set("theme_accent", c)), last=True),
+            ]
+        v.addWidget(self._group(rows))
+        v.addSpacing(8)
 
         # --- attention
         v.addWidget(caps("Attention"))

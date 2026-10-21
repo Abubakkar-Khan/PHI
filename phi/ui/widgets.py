@@ -48,9 +48,9 @@ def _lerp_list(a: Sequence[float], b: Sequence[float], t: float) -> list[float]:
 class Panel(QWidget):
     """Rounded paper card with a hairline border that darkens slightly on hover."""
 
-    def __init__(self, parent=None, radius: int = 14, fill: str = T.SURFACE, hoverable: bool = True):
+    def __init__(self, parent=None, radius: int = 14, fill: str | None = None, hoverable: bool = True):
         super().__init__(parent)
-        self.radius, self.fill, self._hover = radius, fill, 0.0
+        self.radius, self.fill, self._hover = radius, fill or T.SURFACE, 0.0
         self._hoverable = hoverable
         self._anim = animator(self, self._set_hover, 180)
 
@@ -71,7 +71,7 @@ class Panel(QWidget):
     def paintEvent(self, _):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        p.setPen(QPen(T.mix(T.LINE, "#9d9b94", self._hover), 1))
+        p.setPen(QPen(T.mix(T.LINE, T.GRAY, self._hover), 1))
         p.setBrush(QColor(self.fill))
         p.drawRoundedRect(QRectF(self.rect()).adjusted(.5, .5, -.5, -.5), self.radius, self.radius)
 
@@ -129,7 +129,7 @@ class PillButton(QAbstractButton):
     def mouseReleaseEvent(self, e):
         fires = self.isDown() and self.rect().contains(e.position().toPoint())
         if fires:                                   # before clicked() runs: a handler may close this window
-            burst(self, "pop", e.position(), [T.INK, T.ORANGE] if self.variant == "primary" else [T.INK, "#B9B7B0"], 0.7)
+            burst(self, "pop", e.position(), [T.INK, T.ORANGE] if self.variant == "primary" else [T.INK, T.BAR], 0.7)
         super().mouseReleaseEvent(e)
         self._tk.wake()
 
@@ -143,7 +143,7 @@ class PillButton(QAbstractButton):
         p.scale(1.0 - 0.035 * press, 1.0 - 0.035 * press)
         p.translate(-c.x(), -c.y())
         if self.variant == "primary":
-            bg, fg, border = T.mix(T.INK, "#3b3b3b", self._hover), T.PAPER, None
+            bg, fg, border = T.mix(T.INK, T.GRAY, self._hover * .3), T.PAPER, None
         else:
             bg, fg = T.mix(T.PAPER, T.SOFT, self._hover), T.INK
             border = T.mix(T.LINE, T.INK, self._hover * .6)
@@ -244,7 +244,7 @@ class Toggle(QAbstractButton):
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         t = clamp(self._k.x)
         p.setPen(Qt.PenStyle.NoPen)
-        p.setBrush(T.mix("#CFCDC6", T.INK, t))
+        p.setBrush(T.mix(T.EDGE, T.INK, t))
         p.drawRoundedRect(QRectF(0, 0, 40, 22), 11, 11)
         stretch = min(5.0, abs(self._k.v) * 0.8)
         w = 16.0 + stretch
@@ -573,7 +573,7 @@ class StatCard(Panel):
                 stagger = clamp(self._grow * (1 + n * .15) - i * .15)
                 h = max(2.0, 38 * (v / mx) * stagger)
                 last = i == n - 1
-                col = QColor(T.RED if (last and self._bad) else T.INK) if last else QColor("#CBC9C2")
+                col = QColor(T.RED if (last and self._bad) else T.INK) if last else QColor(T.BAR)
                 p.setPen(Qt.PenStyle.NoPen)
                 p.setBrush(col)
                 p.drawRoundedRect(QRectF(x0 + i * (bw + gap), base - h, bw, h), 1.5, 1.5)
@@ -683,7 +683,7 @@ class Timeline(QWidget):
                 if hot:
                     rect = rect.adjusted(0, -1.5, 0, 0)
                 p.setPen(Qt.PenStyle.NoPen)
-                p.setBrush(QColor("#E9E7E1") if v <= 0.02 else T.mix("#E9E7E1", base, .25 + .75 * v))
+                p.setBrush(QColor(T.CELL) if v <= 0.02 else T.mix(T.CELL, base, .25 + .75 * v))
                 p.drawRoundedRect(rect, 2.5, 2.5)
                 if hot:
                     p.setPen(QPen(QColor(T.INK), 1.2))
@@ -800,10 +800,10 @@ class PixelChart(QWidget):
                 elif hi or hovered:
                     col = QColor(T.INK)
                 else:
-                    col = QColor("#B9B7B0")
+                    col = QColor(T.BAR)
                 p.fillRect(QRectF(x, y, sq_w, sq), col)
             if total == 0:
-                p.fillRect(QRectF(x, base - 2, sq_w, 2), QColor("#D9D7D0"))
+                p.fillRect(QRectF(x, base - 2, sq_w, 2), QColor(T.CELL))
             p.setRenderHint(QPainter.RenderHint.TextAntialiasing)
             label_font_paint(p, QRectF(i * cw, base + 6, cw, 14), label, T.mono(9, spacing=.4), T.INK if hi else T.GRAY, Qt.AlignmentFlag.AlignCenter)
             if hovered:
@@ -900,7 +900,7 @@ class UsageRow(QWidget):
         p.setPen(Qt.PenStyle.NoPen)
         for i in range(n):
             on = i < lit
-            col = QColor(T.RED if (self.red and on) else (T.INK if on else "#DEDCD6"))
+            col = QColor(T.RED if (self.red and on) else (T.INK if on else T.CELL))
             p.setBrush(col)
             p.drawRoundedRect(QRectF(bx + i * 7, h / 2 - 3, 4, 6), 1, 1)
         if 0.02 < self._fill < 0.98 and lit > 0:

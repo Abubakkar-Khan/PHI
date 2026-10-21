@@ -342,9 +342,9 @@ CONFETTI = (T.RED, T.ORANGE, T.ORANGE, "#FFA46B", "#B9B7B0", "#D8D6CF")   # no b
 class Mascot(QWidget):
     """Animated pixel nerd. mood: idle | monitoring | alert | celebrate | sleep."""
 
-    def __init__(self, px: int = 6, mood: str = "idle", fill: str = T.PAPER, parent=None, interactive: bool = True):
+    def __init__(self, px: int = 6, mood: str = "idle", fill: str | None = None, parent=None, interactive: bool = True):
         super().__init__(parent)
-        self._px, self._fill, self._interactive = px, fill, interactive
+        self._px, self._fill, self._interactive = px, fill or T.PAPER, interactive
         self._mood = mood if mood in MOODS else "monitoring"
         self.setFixedSize(GRID_W * px, GRID_H * px)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
@@ -751,10 +751,10 @@ class RingMascot(QWidget):
         c = QPointF(self.width() / 2, self.height() / 2)
         r = self.width() / 2 - 6
         n = 72
-        base = QColor(T.PAPER) if self._dark else QColor(T.INK)
+        base = QColor(T.INK)
         if self._dark:  # light disc so the dark outline reads on a black screen
             p.setPen(Qt.PenStyle.NoPen)
-            p.setBrush(QColor(T.BG))
+            p.setBrush(QColor(T.SURFACE))
             p.drawEllipse(c, r - 16, r - 16)
         for i in range(n):
             a = 2 * math.pi * i / n - math.pi / 2

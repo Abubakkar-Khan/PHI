@@ -74,7 +74,7 @@ class Cover(QWidget):
 
     def paintEvent(self, _):
         p = QPainter(self)
-        p.fillRect(self.rect(), DARK)
+        p.fillRect(self.rect(), QColor(T.BG))
         _hazard(p, QRectF(0, 0, self.width(), 34), self._off)
         _hazard(p, QRectF(0, self.height() - 34, self.width(), 34), -self._off)
 
@@ -123,17 +123,17 @@ class HoldButton(QWidget):
         r = QRectF(self.rect()).adjusted(1, 1, -1, -1)
         path = QPainterPath()
         path.addRoundedRect(r, r.height() / 2, r.height() / 2)
-        p.fillPath(path, QColor(30, 28, 28))
+        p.fillPath(path, QColor(T.SOFT))
         p.save()
         p.setClipPath(path)
         p.fillRect(QRectF(r.left(), r.top(), r.width() * min(1.0, self._p), r.height()), QColor(T.RED))
         p.restore()
-        p.setPen(QPen(QColor(90, 86, 84) if not self._armed else QColor(T.GRAY), 1.2))
+        p.setPen(QPen(QColor(T.EDGE) if not self._armed else QColor(T.GRAY), 1.2))
         p.drawPath(path)
         left = max(0.0, self.seconds * (1 - self._p))
         text = self.label if self._p <= 0.01 else f"KEEP HOLDING  {left:.1f}s"
         p.setFont(T.mono(12, T.QFont.Weight.Bold, 1.2))
-        p.setPen(QColor(T.PAPER) if self._armed else QColor(110, 106, 104))
+        p.setPen(QColor(T.INK) if self._armed else QColor(T.GRAY))
         p.drawText(r, int(Qt.AlignmentFlag.AlignCenter), text)
 
 
@@ -174,12 +174,12 @@ class SolidButton(QWidget):
         if self._down:
             r.translate(0, 1)
         p.setPen(Qt.PenStyle.NoPen)
-        p.setBrush(QColor(T.PAPER) if self._armed else QColor(48, 45, 44))
+        p.setBrush(QColor(T.INK) if self._armed else QColor(T.SOFT))
         if self._armed and self._hover:
-            p.setBrush(QColor("#FFFFFF"))
+            p.setBrush(T.mix(T.INK, T.GRAY, .3))
         p.drawRoundedRect(r, r.height() / 2, r.height() / 2)
         p.setFont(T.sans(16, T.QFont.Weight.Bold))
-        p.setPen(QColor(T.INK) if self._armed else QColor(110, 106, 104))
+        p.setPen(QColor(T.PAPER) if self._armed else QColor(T.GRAY))
         p.drawText(r, int(Qt.AlignmentFlag.AlignCenter), self.text)
 
 
@@ -246,11 +246,11 @@ class LockScreen(QWidget):
         center(status, 10)
         self.ring = RingMascot(int(250 * k), 4 if k > .9 else 3, "alert", dark=True)
         center(self.ring, 6)
-        self.title = mk_label("", T.sans(int(78 * k), T.QFont.Weight.Black), T.PAPER, Qt.AlignmentFlag.AlignHCenter)
+        self.title = mk_label("", T.sans(int(78 * k), T.QFont.Weight.Black), T.INK, Qt.AlignmentFlag.AlignHCenter)
         center(self.title, 0)
-        center(mk_label(self.sub, T.sans(19), "#A9A5A2", Qt.AlignmentFlag.AlignHCenter), 8)
-        center(mk_label(self.facts_text, T.mono(12, T.QFont.Weight.Medium, 1.6), "#D8D4D0", Qt.AlignmentFlag.AlignHCenter), 22)
-        center(mk_label("CLOSING FOR YOU IN", T.mono(12, T.QFont.Weight.Bold, 3), "#8C8884", Qt.AlignmentFlag.AlignHCenter), 0)
+        center(mk_label(self.sub, T.sans(19), T.GRAY, Qt.AlignmentFlag.AlignHCenter), 8)
+        center(mk_label(self.facts_text, T.mono(12, T.QFont.Weight.Medium, 1.6), T.INK, Qt.AlignmentFlag.AlignHCenter), 22)
+        center(mk_label("CLOSING FOR YOU IN", T.mono(12, T.QFont.Weight.Bold, 3), T.GRAY, Qt.AlignmentFlag.AlignHCenter), 0)
         self.count = mk_label("", T.mono(int(120 * k), T.QFont.Weight.Black), T.RED, Qt.AlignmentFlag.AlignHCenter)
         center(self.count, 14)
 
@@ -265,7 +265,7 @@ class LockScreen(QWidget):
         row.addWidget(self.b_more)
         row.addStretch(1)
         root.addLayout(row)
-        self.arm_note = mk_label("", T.mono(11, T.QFont.Weight.Medium, 2), "#8C8884", Qt.AlignmentFlag.AlignHCenter)
+        self.arm_note = mk_label("", T.mono(11, T.QFont.Weight.Medium, 2), T.GRAY, Qt.AlignmentFlag.AlignHCenter)
         root.addSpacing(10)
         root.addWidget(self.arm_note)
         root.addStretch(1)
@@ -376,11 +376,11 @@ class LockScreen(QWidget):
     # ---- painting ---------------------------------------------------------------
     def paintEvent(self, _):
         p = QPainter(self)
-        p.fillRect(self.rect(), DARK)
+        p.fillRect(self.rect(), QColor(T.BG))
         # faint dot grid + a red glow rising from the bottom
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         p.setPen(Qt.PenStyle.NoPen)
-        p.setBrush(QColor(255, 255, 255, 14))
+        p.setBrush(T.qc(T.INK, .06))
         for y in range(60, self.height() - 40, 28):
             for x in range(14, self.width(), 28):
                 p.drawEllipse(QPointF(x, y), 1.0, 1.0)

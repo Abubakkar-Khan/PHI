@@ -265,7 +265,7 @@ def burst(widget: QWidget, kind: str = "pop", pos=None, colors: list[str] | None
     rnd = random.random
     sparks: list[_Spark] = []
     if kind == "confetti":
-        palette = colors or [T.INK, T.RED, T.ORANGE, T.ORANGE, "#B9B7B0"]
+        palette = colors or [T.INK, T.RED, T.ORANGE, T.ORANGE, T.BAR]
         for i in range(34):
             a = -math.pi / 2 + (rnd() - 0.5) * 2.3
             v = (240 + rnd() * 340) * scale
@@ -292,9 +292,10 @@ def burst(widget: QWidget, kind: str = "pop", pos=None, colors: list[str] | None
     layer_for(widget).add(sparks)
 
 
-def float_text(widget: QWidget, text: str, pos=None, color: str = T.ORANGE) -> None:
+def float_text(widget: QWidget, text: str, pos=None, color: str | None = None) -> None:
     """A short label that rises and fades, like a +1 popping out of a game character."""
     if not widget.isVisible():
         return
     o = _origin(widget, pos)
+    color = color or T.ORANGE
     layer_for(widget).add([_Spark(o.x(), o.y(), 0.0, -46, 1.1, 1, color, drag=1.6, shape="text", text=text)])

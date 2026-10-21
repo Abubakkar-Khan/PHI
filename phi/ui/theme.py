@@ -3,15 +3,46 @@ from __future__ import annotations
 
 from PySide6.QtGui import QColor, QFont, QFontDatabase
 
-BG = "#F0EFEB"
-SURFACE = "#F7F6F2"
-PAPER = "#FCFBF9"
-INK = "#171717"
-GRAY = "#777777"
-RED = "#E53935"
+LIGHT = dict(BG="#F0EFEB", SURFACE="#F7F6F2", PAPER="#FCFBF9", INK="#171717", GRAY="#777777", RED="#E53935",
+             LINE="#DAD8D1", SOFT="#E6E4DE", CELL="#E9E7E1", BAR="#CBC9C2", EDGE="#CFCDC6")
+DARK = dict(BG="#141414", SURFACE="#1C1C1C", PAPER="#242424", INK="#EDEBE6", GRAY="#8C8B87", RED="#FF4A44",
+            LINE="#2E2E2E", SOFT="#2A2A2A", CELL="#262626", BAR="#454545", EDGE="#3A3A3A")
 ORANGE = "#FF6B1A"   # the mascot's plus sign; used sparingly for sparks
-LINE = "#DAD8D1"
-SOFT = "#E6E4DE"
+
+# live tokens: widgets read these at paint time, so apply() restyles everything built afterwards
+BG, SURFACE, PAPER, INK, GRAY, RED = (LIGHT[k] for k in ("BG", "SURFACE", "PAPER", "INK", "GRAY", "RED"))
+LINE, SOFT, CELL, BAR, EDGE = (LIGHT[k] for k in ("LINE", "SOFT", "CELL", "BAR", "EDGE"))
+
+THEME_KEYS = ("theme_mode", "theme_bg", "theme_text", "theme_accent")
+
+
+def derive(bg: str, text: str, accent: str) -> dict:
+    """Build a full palette from just three colours: background, text and accent."""
+    b, t = QColor(bg), QColor(text)
+    light = b.lightnessF() > 0.5
+    white = "#FFFFFF"
+    return dict(
+        BG=b.name(), INK=t.name(), RED=QColor(accent).name(),
+        SURFACE=mix(b, white, 0.5 if light else 0.04).name(),
+        PAPER=mix(b, white, 0.8 if light else 0.08).name(),
+        GRAY=mix(t, b, 0.5).name(), LINE=mix(b, t, 0.14).name(), SOFT=mix(b, t, 0.08).name(),
+        CELL=mix(b, t, 0.07).name(), BAR=mix(b, t, 0.24).name(), EDGE=mix(b, t, 0.20).name(),
+    )
+
+
+def apply(mode: str, custom: tuple[str, str, str] | None = None) -> None:
+    """mode: light | dark | custom (custom = background, text, accent)."""
+    if mode == "dark":
+        pal = DARK
+    elif mode == "custom" and custom:
+        pal = derive(*custom)
+    else:
+        pal = LIGHT
+    globals().update(pal)
+
+
+def apply_settings(cfg) -> None:
+    apply(cfg.get("theme_mode"), (cfg.get("theme_bg"), cfg.get("theme_text"), cfg.get("theme_accent")))
 
 SANS = ["Geist", "Inter", "Segoe UI Variable Text", "Segoe UI", "Arial"]
 MONO = ["Geist Mono", "JetBrains Mono", "Cascadia Mono", "Cascadia Code", "Consolas", "Courier New"]
@@ -63,7 +94,8 @@ def mix(a: str | QColor, b: str | QColor, t: float) -> QColor:
     )
 
 
-GLOBAL_QSS = f"""
+def qss() -> str:
+    return f"""
 QToolTip {{ background: {INK}; color: {PAPER}; border: none; padding: 5px 8px; }}
 QScrollArea {{ background: transparent; border: none; }}
 QScrollArea > QWidget, QScrollArea > QWidget > QWidget {{ background: transparent; }}

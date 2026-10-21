@@ -78,7 +78,7 @@ class Scrim(QWidget):
 
     def paintEvent(self, _):
         p = QPainter(self)
-        p.fillRect(self.rect(), QColor(12, 10, 10, int(255 * self._alpha)))
+        p.fillRect(self.rect(), T.qc(T.BG, self._alpha))
 
 
 class _CloseX(QWidget):
@@ -369,7 +369,7 @@ class NudgePopup(QWidget):
             p.fillPath(poly, QColor(T.RED))
             x += w * 2
         p.restore()
-        p.setPen(QPen(QColor("#CFCDC6"), 1))
+        p.setPen(QPen(QColor(T.EDGE), 1))
         p.setBrush(Qt.BrushStyle.NoBrush)
         p.drawRoundedRect(card, 24, 24)
 

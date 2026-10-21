@@ -265,24 +265,9 @@ class MainWindow(QWidget):
         self._grain = _grain()
         self._shown_once = self._was_hidden = False
 
-        root = QHBoxLayout(self)
-        root.setContentsMargins(1, 1, 1, 1)
-        root.setSpacing(0)
-        self.sidebar = Sidebar(self._go)
-        root.addWidget(self.sidebar)
-        right = QVBoxLayout()
-        right.setSpacing(0)
-        right.addWidget(TitleBar(self))
-        self.stack = QStackedWidget()
-        self.pages: list[Page] = [TodayPage(ctx), AppsPage(ctx), SettingsPage(ctx)]
-        for pg in self.pages:
-            self.stack.addWidget(pg)
-        right.addWidget(self.stack, 1)
-        root.addLayout(right, 1)
-
-        grip = QSizeGrip(self)
-        grip.setFixedSize(16, 16)
-        self._grip = grip
+        self._grip = QSizeGrip(self)
+        self._grip.setFixedSize(16, 16)
+        self._build()
 
         self._timer = QTimer(self)
         self._timer.setInterval(3000)
@@ -291,6 +276,49 @@ class MainWindow(QWidget):
         self._celebrating = False
         ctx.engine.celebrated.connect(self._celebrate)
         self._refresh()
+
+    # ---- construction (also re-run when the theme changes)
+    def _build(self) -> None:
+        root = QHBoxLayout(self)
+        root.setContentsMargins(1, 1, 1, 1)
+        root.setSpacing(0)
+        self.sidebar = Sidebar(self._go)
+        root.addWidget(self.sidebar)
+        right = QVBoxLayout()
+        right.setSpacing(0)
+        self.titlebar = TitleBar(self)
+        right.addWidget(self.titlebar)
+        self.stack = QStackedWidget()
+        self.pages: list[Page] = [TodayPage(self.ctx), AppsPage(self.ctx), SettingsPage(self.ctx)]
+        for pg in self.pages:
+            self.stack.addWidget(pg)
+        right.addWidget(self.stack, 1)
+        root.addLayout(right, 1)
+        self._grip.raise_()
+
+    def retheme(self) -> None:
+        """Rebuild every widget with the new colours, staying on the same page."""
+        idx = self.stack.currentIndex()
+        def clear(layout) -> None:
+            while layout.count():
+                item = layout.takeAt(0)
+                if item.widget():
+                    item.widget().hide()
+                    item.widget().deleteLater()
+                elif item.layout():
+                    clear(item.layout())
+
+        old = self.layout()
+        clear(old)
+        QWidget().setLayout(old)                      # detach the emptied layout so a fresh one can be installed
+        self._build()
+        self.stack.setCurrentIndex(idx)
+        self.sidebar.select(idx, emit=False)
+        for w in (self.sidebar, self.titlebar, self.stack):
+            w.show()
+        self._refresh()
+        self.pages[idx].enter()
+        self.update()
 
     # ---- behaviour
     def toggle_max(self):
@@ -362,5 +390,5 @@ class MainWindow(QWidget):
         # sidebar hairline
         p.fillRect(QRectF(212, 0, 1, self.height()), QColor(T.LINE))
         p.restore()
-        p.setPen(QPen(QColor("#CFCDC6"), 1))
+        p.setPen(QPen(QColor(T.EDGE), 1))
         p.drawPath(path)

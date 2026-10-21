@@ -15,6 +15,7 @@ from .engine import Engine
 from .server import Bridge, BridgeServer
 from .urlreader import UrlReader
 from .ui import theme as T
+from .ui import mascot as mascot_module
 from .ui.main_window import MainWindow
 from .ui.mascot import ghost_icon
 from .ui.pages import Ctx
@@ -24,7 +25,7 @@ from .ui.popup import PopupController
 class Tray:
     def __init__(self, engine: Engine, cfg: Settings, window: MainWindow, quit_cb):
         self.engine, self.cfg, self.window = engine, cfg, window
-        self.icons = {m: ghost_icon(m) for m in ("monitoring", "idle", "alert", "sleep")}
+        self.icons = self._make_icons()
         self.tray = QSystemTrayIcon(self.icons["monitoring"])
         self.tray.setToolTip("PHI")
         self.menu = QMenu()
@@ -45,6 +46,14 @@ class Tray:
         self.tray.show()
         self._mood = "monitoring"
         engine.snapshot.connect(self.on_snapshot)
+
+    @staticmethod
+    def _make_icons() -> dict:
+        return {m: ghost_icon(m) for m in ("monitoring", "idle", "alert", "sleep")}
+
+    def refresh_icons(self) -> None:
+        self.icons = self._make_icons()
+        self.tray.setIcon(self.icons.get(self._mood, self.icons["monitoring"]))
 
     def show_window(self):
         self.window.showNormal()
@@ -93,7 +102,6 @@ def main(argv: list[str] | None = None) -> int:
     app = QApplication(argv)
     app.setApplicationName(APP_NAME)
     app.setQuitOnLastWindowClosed(False)
-    app.setStyleSheet(T.GLOBAL_QSS)
     app.setWindowIcon(ghost_icon("idle"))
 
     lock = QLockFile(os.path.join(tempfile.gettempdir(), "phi-app.lock"))
@@ -108,6 +116,8 @@ def main(argv: list[str] | None = None) -> int:
     store.purge_older_than(cfg.get("retention_days"))
     cfg.subscribe(lambda k: store.purge_older_than(cfg.get("retention_days")) if k == "retention_days" else None)
     autostart.set_enabled(bool(cfg.get("autostart")))
+    T.apply_settings(cfg)
+    app.setStyleSheet(T.qss())
 
     bridge = Bridge()
     server = BridgeServer(bridge)
@@ -119,6 +129,17 @@ def main(argv: list[str] | None = None) -> int:
     ctx = Ctx(store, cfg, engine)
     window = MainWindow(ctx)
     popups = PopupController(engine, cfg)
+
+    def on_theme_change(key: str) -> None:
+        """Light / dark / custom: swap the tokens, then rebuild the window. Popups pick it up when they appear."""
+        if key not in T.THEME_KEYS:
+            return
+        T.apply_settings(cfg)
+        mascot_module._layers.cache_clear()
+        app.setStyleSheet(T.qss())
+        tray.refresh_icons()
+        QTimer.singleShot(0, window.retheme)     # after the click handler that triggered us has returned
+    cfg.subscribe(on_theme_change)
 
     def quit_app():
         engine.stop()

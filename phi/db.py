@@ -33,6 +33,10 @@ CREATE TABLE IF NOT EXISTS settings (
 
 DEFAULTS = {
     "name": "",
+    "theme_mode": "light",         # light | dark | custom
+    "theme_bg": "#F0EFEB",         # custom theme colours
+    "theme_text": "#171717",
+    "theme_accent": "#E53935",
     "reminders": True,
     "pause_video": True,           # pause the video behind the lock; resumes if you buy more time
     "lockdown": True,              # full-screen takeover instead of a small card
