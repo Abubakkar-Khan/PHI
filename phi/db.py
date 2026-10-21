@@ -34,6 +34,7 @@ CREATE TABLE IF NOT EXISTS settings (
 DEFAULTS = {
     "name": "",
     "reminders": True,
+    "pause_video": True,           # pause the video behind the lock; resumes if you buy more time
     "lockdown": True,              # full-screen takeover instead of a small card
     "lockdown_seconds": 10,        # auto-close countdown (grows if PHI has to ask again)
     "shorts_limit_min": 20,        # continuous Shorts session before a nudge

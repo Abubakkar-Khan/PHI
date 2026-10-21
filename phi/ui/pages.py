@@ -464,6 +464,7 @@ class SettingsPage(Page):
         v.addWidget(self._group([
             SettingRow("Reminders", "Show the PHI nudge when a limit is crossed.", self._toggle("reminders")),
             SettingRow("Full-screen lockdown", "Take over the screen and close Shorts for you. Off = a small card.", self._toggle("lockdown")),
+            SettingRow("Pause the video behind", "Pauses playback when the lock appears; resumes if you buy more time.", self._toggle("pause_video")),
             SettingRow("Lockdown countdown", "Seconds before PHI closes Shorts for you.", self._stepper("lockdown_seconds", 5, 40, 5, "s")),
             SettingRow("Shorts session limit", "Continuous Shorts time before a nudge. 0 = right away.", self._stepper("shorts_limit_min", 0, 240, 1, "min")),
             SettingRow("Shorts daily budget", "Total Shorts time per day. 0 turns it off.", self._stepper("shorts_daily_min", 0, 600, 10, "min")),

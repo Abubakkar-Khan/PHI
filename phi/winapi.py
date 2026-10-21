@@ -120,3 +120,11 @@ def window_title(hwnd: int) -> str:
     buf = ctypes.create_unicode_buffer(256)
     user32.GetWindowTextW(hwnd, buf, 256)
     return buf.value
+
+def media_play_pause() -> None:
+    """Global Play/Pause media key: pauses (or resumes) whatever the browser is playing."""
+    if not IS_WINDOWS:
+        return
+    VK_MEDIA_PLAY_PAUSE, EXTENDED, KEYUP = 0xB3, 0x0001, 0x0002
+    user32.keybd_event(VK_MEDIA_PLAY_PAUSE, 0, EXTENDED, 0)
+    user32.keybd_event(VK_MEDIA_PLAY_PAUSE, 0, EXTENDED | KEYUP, 0)

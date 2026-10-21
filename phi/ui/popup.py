@@ -17,6 +17,7 @@ from PySide6.QtCore import (Property, QEasingCurve, QParallelAnimationGroup, QPo
 from PySide6.QtGui import QColor, QCursor, QGuiApplication, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import QHBoxLayout, QVBoxLayout, QWidget
 
+from .. import winapi
 from ..utils import fmt_clock, fmt_dur, minutes_text
 from . import theme as T
 from .mascot import RingMascot
@@ -391,8 +392,16 @@ class PopupController:
             popup = LockScreen(payload, self.cfg.get("extend_min"), self.cfg.get("lockdown_seconds"))
         else:
             popup = NudgePopup(payload, self.cfg.get("extend_min"), self.cfg.get("pause_min"))
-        popup.action.connect(lambda a, pl=payload: self.engine.resolve(pl, a))
+        pausing = bool(self.cfg.get("pause_video"))
+        popup.action.connect(lambda a, pl=payload: self._on_action(a, pl, pausing))
         popup.destroyed.connect(lambda: setattr(self, "current", None) if self.current is popup else None)
         popup.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         self.current = popup
+        if pausing:
+            winapi.media_play_pause()      # silence the Short behind the lock right away
         popup.present()
+
+    def _on_action(self, action: str, payload: dict, paused: bool) -> None:
+        if paused and action != "stop":    # staying on the page: let the video carry on
+            QTimer.singleShot(500, winapi.media_play_pause)
+        self.engine.resolve(payload, action)
