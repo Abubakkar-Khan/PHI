@@ -64,8 +64,9 @@ class Engine(QObject):
         self.timer.setInterval(500)
         self.timer.timeout.connect(self._tick)
         self._title_key = None
+        self._reader_version = 0
         self.watch = QTimer(self)
-        self.watch.setInterval(150)
+        self.watch.setInterval(40)
         self.watch.timeout.connect(self._watch_title)
 
     # ---- lifecycle ----------------------------------------------------
@@ -120,6 +121,9 @@ class Engine(QObject):
         to read the address bar immediately and re-evaluate, instead of waiting for the next poll."""
         if not self.reader or self.tracking_paused:
             return
+        if self.reader and self.reader.version != self._reader_version:
+            self._reader_version = self.reader.version
+            self._tick()                  # the address bar just changed: evaluate right now
         fg = winapi.foreground()
         if not fg or fg.exe.lower() not in BROWSERS or fg.exe.lower() == "firefox.exe":
             return
@@ -178,11 +182,12 @@ class Engine(QObject):
                 self.reader.set_target(fg.hwnd if exe in BROWSERS and exe != "firefox.exe" else pinned)
             src = None
             if exe in BROWSERS:
-                if hb and hb["active"]:
-                    src = hb
-                elif self.reader:
+                if self.reader:                       # address-bar reading is live; prefer it
                     src = self.reader.latest(fg.hwnd)
+                if src is None and hb and hb["active"]:
+                    src = hb                          # extension heartbeat is only a fallback
             if src and not src["incognito"] and src["host"]:
+                self._src_changed = src.get("changed")
                 hb = src
                 site = normalize_host(src["host"])
                 shorts = bool(src["shorts"]) and site == "youtube.com"
@@ -290,7 +295,8 @@ class Engine(QObject):
         payload["today_s"] = self.today_seconds("shorts", "youtube") if payload["kind"] != "site" else payload["seconds"]
         payload["count"] = int(self.today_seconds("swipes", "shorts")) if payload["kind"] != "site" else 0
         self.nudge_open = True
-        self.log(f"NUDGE {payload['kind']} session={self._session:.0f}s")
+        lag = f" detect-lag={time.time() - self._src_changed:.2f}s" if getattr(self, "_src_changed", None) else ""
+        self.log(f"NUDGE {payload['kind']} session={self._session:.0f}s{lag}")
         self.store.log_event(time.time(), self._day, "nudge", payload["kind"])
         self.nudge.emit(payload)
 

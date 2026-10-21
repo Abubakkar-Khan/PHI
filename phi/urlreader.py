@@ -19,7 +19,7 @@ from urllib.parse import urlparse
 
 from . import winapi
 
-POLL_SECONDS = 0.35
+POLL_SECONDS = 0.08
 _SHORTS_ID = re.compile(r"^/shorts/([^/?#]+)")
 _PRIVATE = re.compile(r"incognito|inprivate|private", re.I)
 
@@ -48,6 +48,7 @@ class UrlReader:
         self._thread: threading.Thread | None = None
         self.available = True
         self.status = "idle"      # ok | no-omnibox | error:... (for the activity log)
+        self.version = 0          # bumped whenever the host / Shorts state changes (engine reacts instantly)
 
     def start(self) -> None:
         self._thread = threading.Thread(target=self._run, name="phi-urlreader", daemon=True)
@@ -108,6 +109,7 @@ class UrlReader:
                     self._wake.wait(0.5)
                     self._wake.clear()
                     continue
+                t_read = time.perf_counter()
                 try:
                     if hwnd not in cache:
                         edit, win = self._find_omnibox(auto, hwnd)
@@ -128,12 +130,18 @@ class UrlReader:
                         swipes[hwnd] = swipes.get(hwnd, 0) + 1
                     elif not shorts_id:
                         last_id.pop(hwnd, None)
+                    prev = self._result
+                    changed = prev["changed"] if prev else time.time()
+                    if not prev or prev["hwnd"] != hwnd or prev["host"] != host or prev["shorts"] != bool(shorts_id):
+                        self.version += 1
+                        changed = time.time()
                     with self._lock:
                         self._result = {
                             "hwnd": hwnd, "ts": time.time(), "host": host, "shorts": bool(shorts_id),
-                            "swipes": swipes.get(hwnd, 0), "incognito": bool(_PRIVATE.search(title)),
+                            "changed": changed, "swipes": swipes.get(hwnd, 0), "incognito": bool(_PRIVATE.search(title)),
                         }
-                    self.status = "ok"
+                    ms = (time.perf_counter() - t_read) * 1000
+                    self.status = "ok" if ms < 250 else f"slow:{ms:.0f}ms"
                 except Exception as exc:  # stale element etc.: re-find next round, keep last good result
                     cache.pop(hwnd, None)
                     self.status = f"error:{type(exc).__name__}"
