@@ -53,6 +53,7 @@ class Engine(QObject):
         self._extra_session = 0.0
         self._extra_daily = 0.0
         self._extra_site: dict[str, float] = defaultdict(float)
+        self._extra_app: dict[str, float] = defaultdict(float)
         self._last_swipes: dict[int, int] = {}
         self._status = "monitoring"
         self._browser_hwnd = 0
@@ -86,6 +87,7 @@ class Engine(QObject):
         self._session = 0.0
         self._extra_session = self._extra_daily = 0.0
         self._extra_site.clear()
+        self._extra_app.clear()
 
     # ---- public controls -----------------------------------------------
     def set_tracking_paused(self, paused: bool) -> None:
@@ -97,6 +99,17 @@ class Engine(QObject):
     @property
     def reminders_paused(self) -> bool:
         return time.time() < self.reminders_paused_until
+
+    def today_sum(self, kind: str) -> float:
+        """Total seconds today for one kind (app, site, ...), live including unsaved time."""
+        return sum(v for (k, _n), v in self._today.items() if k == kind)
+
+    def site_used(self, domain: str) -> float:
+        """Seconds on a site today. For youtube.com this is YouTube *without* Shorts, which has its own limits."""
+        used = self.today_seconds("site", normalize_host(domain))
+        if normalize_host(domain) == "youtube.com":
+            used = max(0.0, used - self.today_seconds("shorts", "youtube"))
+        return used
 
     def today_seconds(self, kind: str, name: str) -> float:
         return self._today.get((kind, name), 0.0)
@@ -218,6 +231,8 @@ class Engine(QObject):
                     self._on_shorts(now, dt)
                 elif site:
                     self._check_site(site, label)
+                else:
+                    self._check_app(exe, fg.hwnd)
 
         rs = self.reader.status if (self.reader and fg and fg.exe.lower() in BROWSERS) else None
         if rs and rs != getattr(self, "_last_rs", None):
@@ -284,16 +299,29 @@ class Engine(QObject):
             domain = entry["domain"]
             if not entry.get("enabled") or not entry.get("limit") or not host_matches(site, domain):
                 continue
-            used = self.today_seconds("site", site)
+            used = self.site_used(site)
             if used >= entry["limit"] * 60 + self._extra_site[domain] and self._can_nudge(now):
                 self._emit_nudge({"kind": "site", "seconds": used, "label": pretty_site(site), "domain": domain})
+            return
+
+    def _check_app(self, exe: str, hwnd: int) -> None:
+        """Daily limits for desktop apps (Settings -> Watched apps)."""
+        now = time.time()
+        for entry in self.cfg.get("watched_apps"):
+            key = entry["exe"].lower()
+            if key != exe or not entry.get("enabled") or not entry.get("limit"):
+                continue
+            used = self.today_seconds("app", exe)
+            if used >= entry["limit"] * 60 + self._extra_app[key] and self._can_nudge(now):
+                self._emit_nudge({"kind": "app", "seconds": used, "label": pretty_app(exe), "domain": key, "hwnd": hwnd})
             return
 
     def _emit_nudge(self, payload: dict) -> None:
         self._repeat += 1
         payload["repeat"] = self._repeat
-        payload["today_s"] = self.today_seconds("shorts", "youtube") if payload["kind"] != "site" else payload["seconds"]
-        payload["count"] = int(self.today_seconds("swipes", "shorts")) if payload["kind"] != "site" else 0
+        shorts_kind = payload["kind"] in ("shorts", "daily")
+        payload["today_s"] = self.today_seconds("shorts", "youtube") if shorts_kind else payload["seconds"]
+        payload["count"] = int(self.today_seconds("swipes", "shorts")) if shorts_kind else 0
         self.nudge_open = True
         lag = f" detect-lag={time.time() - self._src_changed:.2f}s" if getattr(self, "_src_changed", None) else ""
         self.log(f"NUDGE {payload['kind']} session={self._session:.0f}s{lag}")
@@ -311,11 +339,15 @@ class Engine(QObject):
         self.log(f"RESOLVE {action} ({kind})")
 
         if action == "stop":
-            match = "shorts" if kind in ("shorts", "daily") else payload["domain"]
-            if self.bridge.fresh(12):
-                self.bridge.queue_command({"type": "close", "match": match})   # extension closes the tab
+            if kind == "app":
+                # An app is never force-closed (unsaved work): it is minimised.
+                QTimer.singleShot(200, lambda: winapi.minimize(payload.get("hwnd", 0)))
             else:
-                QTimer.singleShot(150, lambda: self._close_by_keys(match))      # no extension: Ctrl+W
+                match = "shorts" if kind in ("shorts", "daily") else payload["domain"]
+                if self.bridge.fresh(12):
+                    self.bridge.queue_command({"type": "close", "match": match})   # extension closes the tab
+                else:
+                    QTimer.singleShot(150, lambda: self._close_by_keys(match))      # no extension: Ctrl+W
             # fresh start: reopening Shorts is a new session and is checked again right away
             self._session = 0.0
             self._last_shorts = 0.0
@@ -332,9 +364,14 @@ class Engine(QObject):
                 today = self.today_seconds("shorts", "youtube")
                 self._extra_session = max(0.0, self._session + extend - self.cfg.get("shorts_limit_min") * 60)
                 self._extra_daily = max(0.0, today + extend - self.cfg.get("shorts_daily_min") * 60)
+            elif kind == "app":
+                d = payload["domain"]
+                used = self.today_seconds("app", d)
+                limit = next((e["limit"] for e in self.cfg.get("watched_apps") if e["exe"].lower() == d), 0)
+                self._extra_app[d] = max(0.0, used + extend - limit * 60)
             else:
                 d = payload["domain"]
-                used = self.today_seconds("site", normalize_host(d))
+                used = self.site_used(d)
                 limit = next((e["limit"] for e in self.cfg.get("watched_sites") if e["domain"] == d), 0)
                 self._extra_site[d] = max(0.0, used + extend - limit * 60)
         elif action == "pause":

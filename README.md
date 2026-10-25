@@ -26,18 +26,19 @@
 4. [Architecture](#architecture)
 5. [How detection works](#how-detection-works)
 6. [The nudge](#the-nudge)
-7. [Timers and alarms](#timers-and-alarms)
-8. [Themes](#themes)
-9. [Animation and performance](#animation-and-performance)
-10. [Data model](#data-model)
-11. [Project structure](#project-structure)
-12. [Install and run](#install-and-run)
-13. [Build the installer](#build-the-installer)
-14. [Browser extension](#browser-extension)
-15. [Privacy and security](#privacy-and-security)
-16. [Status](#status)
-17. [Contributing](#contributing)
-18. [License](#license)
+7. [Today and Activity](#today-and-activity)
+8. [Timers and alarms](#timers-and-alarms)
+9. [Themes](#themes)
+10. [Animation and performance](#animation-and-performance)
+11. [Data model](#data-model)
+12. [Project structure](#project-structure)
+13. [Install and run](#install-and-run)
+14. [Build the installer](#build-the-installer)
+15. [Browser extension](#browser-extension)
+16. [Privacy and security](#privacy-and-security)
+17. [Status](#status)
+18. [Contributing](#contributing)
+19. [License](#license)
 
 ---
 
@@ -45,7 +46,9 @@
 
 PHI sits in your system tray and watches which app or site is in focus, counting time only while you are actually active. When YouTube Shorts (or another site you watch) crosses a limit you set, PHI interrupts you with a full-screen lock or a small card, pauses the video, and closes the tab for you unless you decide otherwise.
 
-- **Tracks time** per app and per site, with a Today dashboard, 7-day charts and an hourly timeline.
+- **Tracks time** for desktop apps and websites, with websites split three ways: **YouTube Shorts**, **YouTube** (without Shorts) and **every other site**.
+- **Limits for all of them**: a daily limit per app, per website, and for YouTube, plus separate session and daily limits for Shorts.
+- **Today** is a thoughtful overview (screen time, apps, websites, Shorts, when it happened, how close each limit is). **Activity** is the full history by day, week or month, and every bar opens that day hour by hour.
 - **Detects Shorts** by reading the browser's address bar. The browser extension is optional.
 - **Interrupts you** with a lock screen or a card, a siren, a countdown, and friction that grows each time it has to ask again.
 - **Closes Shorts for you** through the extension, or with Ctrl+W when no extension is connected.
@@ -294,6 +297,21 @@ The only keys PHI ever sends are Ctrl+W (after re-checking the page) and the med
 
 ---
 
+## Today and Activity
+
+**Today** shows four totals with a 7-day trend (screen time, apps, websites, YouTube Shorts), an insight line (peak hour, top item, Shorts share), a timeline of when apps, websites and Shorts were used, **Limits today** (a progress bar per limit that turns red near the end), and the top apps and top websites.
+
+**Activity** is the full history:
+
+- **Day / Week / Month** with previous and next buttons. A week runs Monday to Sunday.
+- **All / Apps / Websites** filter. Websites are split into YouTube Shorts, YouTube (without Shorts) and other sites.
+- **Click a bar** in the week or month chart to open that day. The day view shows the hourly chart, an hour-by-hour grid for the top eight apps and sites (the "spans"), and the breakdown. "← back" returns to the week or month.
+- Hover any bar or cell to read the exact time.
+
+**Limits** work the same way for every kind of item. Apps and websites have a daily limit in Settings (Watched apps, Watched websites). YouTube has its own limit that counts only non-Shorts time, and Shorts keep their session and daily budgets. When an app reaches its limit PHI shows the lock or card, and "stop" **minimizes** the app instead of closing it, so nothing is lost.
+
+---
+
 ## Timers and alarms
 
 Set them up in **Settings → Timers & alarms**. Each one has:
@@ -407,7 +425,8 @@ The tables are independent on purpose. `usage` and `events` only share the `day`
 | `track_apps` | `true` | Record desktop apps, not just sites |
 | `autostart` | `true` | Start with Windows (per-user Run key, no admin) |
 | `retention_days` | `90` | Older days are deleted automatically |
-| `watched_sites` | Instagram and Reddit on (15 min), TikTok and X off | Per-site daily limits |
+| `watched_sites` | Instagram and Reddit on (15 min), TikTok, X and YouTube off | Per-website daily limits. The `youtube.com` entry counts YouTube **without Shorts** |
+| `watched_apps` | none | Per-app daily limits, as `{exe, limit, enabled}`. When one is reached the app is **minimized**, never closed |
 | `excluded_sites` | none | Sites that are never recorded |
 | `theme_mode` | `light` | `light`, `dark` or `custom` |
 | `theme_bg`, `theme_text`, `theme_accent` | `#F0EFEB`, `#171717`, `#E53935` | The three colours used by the custom theme |
@@ -428,6 +447,7 @@ PHI/
 │   ├── engine.py          the 500 ms loop, limits, nudges, closing tabs
 │   ├── reminders.py       timers and alarms scheduler
 │   ├── urlreader.py       address-bar reader (UI Automation, worker thread)
+│   ├── stats.py           read-side helpers: ranked items, YouTube/Shorts split, day/week/month periods
 │   ├── server.py          localhost bridge for the extension
 │   ├── db.py              SQLite store and settings
 │   ├── winapi.py          foreground window, idle time, focus, Ctrl+W, media key
@@ -435,7 +455,8 @@ PHI/
 │   ├── utils.py           host normalisation, labels, time formatting
 │   └── ui/
 │       ├── main_window.py frameless window, spring sidebar, title bar
-│       ├── pages.py       Today, Apps and Sites, Settings
+│       ├── dashboard.py   Today (overview) and Activity (day / week / month)
+│       ├── pages.py       Settings and shared page helpers
 │       ├── popup.py       the nudge card and its controller
 │       ├── lockscreen.py  full-screen lockdown
 │       ├── reminderscreen.py  full-screen timer/alarm and its controller
@@ -494,8 +515,15 @@ python -m phi --background    # tray only
 
 `run_phi.pyw` starts the same app without a console window.
 
+### First run
+
+1. Open **Settings** and set **Shorts session limit** (`0` locks as soon as Shorts opens, `20` after 20 continuous minutes).
+2. Optional: pick a theme under **Appearance**, and add timers under **Timers & alarms**.
+3. Open YouTube Shorts in Chrome, Edge, Brave, Vivaldi or Opera. The Today screen's chip changes to `SHORTS DETECTED`. No extension is needed.
+
 ### Troubleshooting
 
+- **"Failed to load Python DLL" or a missing-DLL error.** Install from `PHI-Setup.exe` (it bundles the Visual C++ runtime) instead of copying `PHI.exe` out of its folder. If an antivirus quarantined a file, restore it and allow PHI.
 - **Nothing changed after an update.** Only one PHI can run at a time (a lock file in your temp folder). A copy that is still in the tray keeps running its old code. Quit it from the tray menu, then start PHI again.
 - **Shorts is not detected.** Open `%APPDATA%\PHI\phi.log` and look for `reader:` lines. `no-omnibox` means the address bar was not found (full-screen mode hides it), and `unavailable` means the `uiautomation` package is missing. Firefox pages are not read.
 - **Where is my data?** `%APPDATA%\PHI` (database `phi.db` and the log `phi.log`). To start fresh, quit PHI and delete that folder.
@@ -585,7 +613,8 @@ flowchart TD
 | Monitoring engine, limits, idle handling | Implemented |
 | Address-bar detection (Chromium) | Implemented, extension is a fallback |
 | Browser extension (MV3) | Implemented |
-| Today, Apps and Sites, Settings pages | Implemented |
+| Today, Activity (day / week / month with drill-down), Settings pages | Implemented |
+| Limits for apps, YouTube, YouTube Shorts and other websites | Implemented |
 | Nudge card and full-screen lockdown | Implemented |
 | Tray icon and menu | Implemented |
 | Timers and alarms (interval or daily, full-screen) | Implemented |

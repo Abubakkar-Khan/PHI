@@ -60,8 +60,10 @@ DEFAULTS = {
         {"domain": "reddit.com", "limit": 15, "enabled": True},
         {"domain": "tiktok.com", "limit": 15, "enabled": False},
         {"domain": "x.com", "limit": 15, "enabled": False},
+        {"domain": "youtube.com", "limit": 60, "enabled": False},   # YouTube without Shorts
     ],
     "excluded_sites": [],
+    "watched_apps": [],            # [{"exe": "discord.exe", "limit": 60, "enabled": true}]
 }
 
 
@@ -179,6 +181,29 @@ class Store:
                 "SELECT SUM(seconds) FROM usage WHERE day=? AND kind=? AND name=? AND hour<=?",
                 (day, kind, name, hour)).fetchone()
         return row[0] or 0.0
+
+    def daily_kind_range(self, d0: str, d1: str, kinds: tuple[str, ...], name: str | None = None) -> dict[str, float]:
+        """Seconds per day between d0 and d1 for the given kinds (summed)."""
+        marks = ",".join("?" * len(kinds))
+        sql = f"SELECT day,SUM(seconds) FROM usage WHERE day BETWEEN ? AND ? AND kind IN ({marks})"
+        args: list = [d0, d1, *kinds]
+        if name is not None:
+            sql += " AND name=?"
+            args.append(name)
+        with self.lock:
+            rows = self.conn.execute(sql + " GROUP BY day", args).fetchall()
+        return {d: s or 0.0 for d, s in rows}
+
+    def hourly_kinds(self, day: str, kinds: tuple[str, ...]) -> list[float]:
+        """Seconds per hour of one day for the given kinds (summed)."""
+        marks = ",".join("?" * len(kinds))
+        with self.lock:
+            rows = self.conn.execute(
+                f"SELECT hour,SUM(seconds) FROM usage WHERE day=? AND kind IN ({marks}) GROUP BY hour", (day, *kinds)).fetchall()
+        out = [0.0] * 24
+        for h, s in rows:
+            out[int(h)] = s or 0.0
+        return out
 
     def event_count(self, day: str, kind: str) -> int:
         with self.lock:

@@ -595,6 +595,7 @@ class Timeline(QWidget):
         self._blend = 1.0
         self._tween = animator(self, self._set_blend, 520)
         self._hc: tuple[int, int] | None = None
+        self.show_now = True                  # the red "now" tick only makes sense for today
         self.setMinimumHeight(170)
         self.setMouseTracking(True)
         self._now = QTimer(self)
@@ -667,7 +668,8 @@ class Timeline(QWidget):
             label_font_paint(p, QRectF(grid_x + h * cw - 4, self.height() - self.AXIS_H + 6, cw * 3, 14), f"{h:02d}", T.mono(9, spacing=.6), T.GRAY)
         p.setPen(Qt.PenStyle.NoPen)                                 # "now" tick
         p.setBrush(QColor(T.RED))
-        p.drawRoundedRect(QRectF(grid_x + hour_now * cw + cw / 2 - 3, self.height() - self.AXIS_H + 2, 6, 2), 1, 1)
+        if self.show_now:
+            p.drawRoundedRect(QRectF(grid_x + hour_now * cw + cw / 2 - 3, self.height() - self.AXIS_H + 2, 6, 2), 1, 1)
         tag = None
         for ri, (name, _hrs, red) in enumerate(self.rows):
             hours = self._hours(ri)
@@ -708,8 +710,12 @@ class Timeline(QWidget):
 class PixelChart(QWidget):
     """Columns built from small squares: ink for active time, red for Shorts. Same labels = tween, new labels = grow."""
 
+    clicked = Signal(int)                      # column index (when clickable)
+
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.tips: list[str] = []              # optional hover prefix per column, e.g. "TUE 20 OCT"
+        self.clickable = False
         self.cols: list[tuple[str, float, float, bool]] = []   # label, total_s, shorts_s, highlight
         self.unit_s = 600.0
         self._grow = 1.0
@@ -767,7 +773,12 @@ class PixelChart(QWidget):
         i = i if 0 <= i < len(self.cols) else -1
         if i != self._hover:
             self._hover = i
+            self.setCursor(Qt.CursorShape.PointingHandCursor if (self.clickable and i >= 0) else Qt.CursorShape.ArrowCursor)
             self.update()
+
+    def mouseReleaseEvent(self, e):
+        if self.clickable and 0 <= self._hover < len(self.cols):
+            self.clicked.emit(self._hover)
 
     def leaveEvent(self, e):
         self._hover = -1
@@ -807,7 +818,8 @@ class PixelChart(QWidget):
             p.setRenderHint(QPainter.RenderHint.TextAntialiasing)
             label_font_paint(p, QRectF(i * cw, base + 6, cw, 14), label, T.mono(9, spacing=.4), T.INK if hi else T.GRAY, Qt.AlignmentFlag.AlignCenter)
             if hovered:
-                txt = fmt_dur(total) + (f"  ·  {fmt_dur(shorts)} shorts" if shorts >= 60 else "")
+                tip = f"{self.tips[i]}  ·  " if i < len(self.tips) and self.tips[i] else ""
+                txt = tip + fmt_dur(total) + (f"  ·  {fmt_dur(shorts)} shorts" if shorts >= 60 else "")
                 fm = QFontMetrics(T.mono(10, T.QFont.Weight.Medium))
                 w = fm.horizontalAdvance(txt) + 16
                 bx = max(0, min(self.width() - w, i * cw + cw / 2 - w / 2))
@@ -908,3 +920,49 @@ class UsageRow(QWidget):
             p.drawRoundedRect(QRectF(bx + (lit - 1) * 7, h / 2 - 3, 4, 6), 1, 1)
         label_font_paint(p, QRectF(w - 130, 0, 70, h), fmt_dur(seconds), T.mono(12, T.QFont.Weight.Medium), T.INK, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         label_font_paint(p, QRectF(w - 56, 0, 46, h), f"{round(share * 100)}%", T.mono(10), T.GRAY, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+
+
+# ---------------------------------------------------------------- limit bars
+class LimitBar(QWidget):
+    """One budget line: name, 'used / limit' and a bar that turns red as the limit nears."""
+
+    def __init__(self, name: str, tag: str, used: float, limit: float, parent=None):
+        super().__init__(parent)
+        self.name, self.tag, self.used, self.limit = name, tag, used, limit
+        self._shown = used
+        self.setFixedHeight(46)
+        self._anim = animator(self, self._set, 500)
+
+    def _set(self, v):
+        self._shown = v
+        self.update()
+
+    def set_values(self, used: float, limit: float) -> None:
+        if (used, limit) == (self.used, self.limit):
+            return
+        self.limit = limit
+        start = self._shown
+        self.used = used
+        self._anim.stop()
+        self._anim.valueChanged.disconnect()
+        self._anim.valueChanged.connect(lambda v, a=start, b=used: self._set(a + (b - a) * float(v)))
+        run(self._anim, 0, 1)
+
+    def paintEvent(self, _):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        w = self.width()
+        frac = clamp(self._shown / self.limit) if self.limit else 0.0
+        hot = frac >= 0.85
+        label_font_paint(p, QRectF(0, 2, w - 150, 18), self.name, T.sans(13, T.QFont.Weight.Medium), T.INK)
+        label_font_paint(p, QRectF(w - 150, 2, 150, 18), f"{fmt_dur(self._shown)} / {fmt_dur(self.limit)}",
+                         T.mono(11, T.QFont.Weight.Medium), T.RED if hot else T.INK,
+                         Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        label_font_paint(p, QRectF(0, 20, w, 12), self.tag.upper(), T.mono(8, spacing=1.0), T.GRAY)
+        n = max(10, int((w) // 7))
+        lit = int(round(n * frac))
+        p.setPen(Qt.PenStyle.NoPen)
+        step = w / n
+        for i in range(n):
+            p.setBrush(QColor(T.RED if (hot and i < lit) else (T.INK if i < lit else T.CELL)))
+            p.drawRoundedRect(QRectF(i * step, 34, max(2.0, step - 3), 6), 1.5, 1.5)

@@ -190,6 +190,7 @@ class LockScreen(QWidget):
         "shorts": [["SHORTS: LOCKED.", "NOT NOW."], ["AGAIN?!", "NO."], ["YOU KNOW THE DRILL."]],
         "daily": [["DAILY LIMIT HIT.", "THAT'S ENOUGH."], ["STILL HERE?!"], ["NO MORE TODAY."]],
         "site": [["LIMIT HIT.", "TIME'S UP."], ["AGAIN?!"], ["GO DO SOMETHING."]],
+        "app": [["APP LIMIT HIT.", "STEP AWAY."], ["AGAIN?!"], ["GO DO SOMETHING ELSE."]],
     }
 
     def __init__(self, payload: dict, extend_min: int, lock_seconds: int):
@@ -224,7 +225,7 @@ class LockScreen(QWidget):
             stop_text = "CLOSE SHORTS NOW"
         else:
             self.sub = f"{minutes_text(self._seconds)} on {label} today. You set this limit yourself."
-            stop_text = f"CLOSE {label.upper()} NOW"
+            stop_text = f"MINIMIZE {label.upper()} NOW" if self.kind == "app" else f"CLOSE {label.upper()} NOW"
         facts = [f"TODAY {fmt_dur(payload.get('today_s', self._seconds))}"]
         if payload.get("count"):
             facts.append(f"{payload['count']} SHORTS WATCHED")
@@ -250,7 +251,7 @@ class LockScreen(QWidget):
         center(self.title, 0)
         center(mk_label(self.sub, T.sans(19), T.GRAY, Qt.AlignmentFlag.AlignHCenter), 8)
         center(mk_label(self.facts_text, T.mono(12, T.QFont.Weight.Medium, 1.6), T.INK, Qt.AlignmentFlag.AlignHCenter), 22)
-        center(mk_label("CLOSING FOR YOU IN", T.mono(12, T.QFont.Weight.Bold, 3), T.GRAY, Qt.AlignmentFlag.AlignHCenter), 0)
+        center(mk_label(("MINIMIZING FOR YOU IN" if self.kind == "app" else "CLOSING FOR YOU IN"), T.mono(12, T.QFont.Weight.Bold, 3), T.GRAY, Qt.AlignmentFlag.AlignHCenter), 0)
         self.count = mk_label("", T.mono(int(120 * k), T.QFont.Weight.Black), T.RED, Qt.AlignmentFlag.AlignHCenter)
         center(self.count, 14)
 

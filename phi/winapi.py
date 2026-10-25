@@ -128,3 +128,8 @@ def media_play_pause() -> None:
     VK_MEDIA_PLAY_PAUSE, EXTENDED, KEYUP = 0xB3, 0x0001, 0x0002
     user32.keybd_event(VK_MEDIA_PLAY_PAUSE, 0, EXTENDED, 0)
     user32.keybd_event(VK_MEDIA_PLAY_PAUSE, 0, EXTENDED | KEYUP, 0)
+
+def minimize(hwnd: int) -> None:
+    """Minimise a window (used when an app limit is reached; the app keeps running and nothing is lost)."""
+    if IS_WINDOWS and hwnd:
+        user32.ShowWindow(hwnd, 6)   # SW_MINIMIZE

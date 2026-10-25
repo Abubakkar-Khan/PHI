@@ -51,339 +51,6 @@ class Page(QWidget):
         """Play the page's entrance (staggered count-ups, growing bars). Called when the page becomes visible."""
 
 
-# ======================================================================== TODAY
-class TodayPage(Page):
-    def __init__(self, ctx: Ctx):
-        super().__init__()
-        self.ctx = ctx
-        v = QVBoxLayout(self)
-        v.setContentsMargins(30, 6, 30, 26)
-        v.setSpacing(18)
-
-        head = QHBoxLayout()
-        left = QVBoxLayout()
-        left.setSpacing(4)
-        self.greet = mk_label("", T.sans(30, T.QFont.Weight.Medium))
-        self.greet.setWordWrap(True)
-        left.addWidget(self.greet)
-        left.addWidget(mk_label("Stay intentional. Your time matters.", T.sans(13), T.GRAY))
-        head.addLayout(left, 1)
-        right = QVBoxLayout()
-        right.setSpacing(2)
-        right.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignRight)
-        self.date_lbl = mk_label("", T.mono(11, spacing=1.2), T.GRAY, Qt.AlignmentFlag.AlignRight)
-        self.chip = StatusChip()
-        self.link_lbl = mk_label("", T.mono(10, spacing=1.0), T.GRAY, Qt.AlignmentFlag.AlignRight)
-        right.addWidget(self.date_lbl)
-        right.addWidget(self.chip, 0, Qt.AlignmentFlag.AlignRight)
-        right.addWidget(self.link_lbl)
-        head.addLayout(right)
-        v.addLayout(head)
-
-        cards = QHBoxLayout()
-        cards.setSpacing(14)
-        self.c_active = StatCard("Active time")
-        self.c_shorts = StatCard("YouTube Shorts")
-        self.c_nudges = StatCard("Nudges")
-        for c in (self.c_active, self.c_shorts, self.c_nudges):
-            cards.addWidget(c, 1)
-        v.addLayout(cards)
-
-        bottom = QHBoxLayout()
-        bottom.setSpacing(14)
-        tl_panel = Panel(hoverable=False)
-        tl = QVBoxLayout(tl_panel)
-        tl.setContentsMargins(20, 16, 20, 12)
-        tl.addWidget(caps("Today's activity"))
-        self.timeline = Timeline()
-        tl.addWidget(self.timeline, 1)
-        bottom.addWidget(tl_panel, 5)
-
-        top_panel = Panel(hoverable=False)
-        self.top_layout = QVBoxLayout(top_panel)
-        self.top_layout.setContentsMargins(14, 16, 14, 12)
-        self.top_layout.setSpacing(0)
-        t = caps("Top apps & sites")
-        t.setContentsMargins(6, 0, 0, 6)
-        self.top_layout.addWidget(t)
-        self.top_rows = QVBoxLayout()
-        self.top_rows.setSpacing(0)
-        self.top_layout.addLayout(self.top_rows)
-        self.top_layout.addStretch(1)
-        bottom.addWidget(top_panel, 3)
-        v.addLayout(bottom, 1)
-        self._top_keys: list | None = None
-        self._top_widgets: list[TopRow] = []
-
-    def enter(self) -> None:
-        for i, c in enumerate((self.c_active, self.c_shorts, self.c_nudges)):
-            c.replay(i * 70)
-        self.timeline.replay()
-        for i, row in enumerate(self._top_widgets):
-            row.replay(180 + i * 70)
-
-    def refresh(self) -> None:
-        eng, s = self.ctx.engine, self.ctx.store
-        eng.flush()
-        now = datetime.now()
-        today, yday = date.today(), date.today() - timedelta(days=1)
-        name = self.ctx.cfg.get("name").strip()
-        part = "morning" if now.hour < 12 else "afternoon" if now.hour < 18 else "evening"
-        self.greet.setText(f"Good {part},\n{name}." if name else f"Good {part}.")
-        self.date_lbl.setText(now.strftime("%a\n%b %d %Y").upper().replace("\n", "  ·  "))
-
-        total = eng.today_seconds("total", "*")
-        shorts = eng.today_seconds("shorts", "youtube")
-        swipes = int(eng.today_seconds("swipes", "shorts"))
-        nudges = s.event_count(today.isoformat(), "nudge")
-        stopped = s.event_count(today.isoformat(), "stop")
-
-        def delta(cur: float, prev: float, thresh: float = 60):
-            if prev < thresh:
-                return "", 0
-            pct = round((cur - prev) / prev * 100)
-            if pct == 0:
-                return "SAME AS YDAY", 0
-            return f"{abs(pct)}% VS YDAY", 1 if pct > 0 else -1
-
-        p_total = s.total_until(yday.isoformat(), "total", "*", now.hour)
-        p_shorts = s.total_until(yday.isoformat(), "shorts", "youtube", now.hour)
-        d, dr = delta(total, p_total)
-        self.c_active.set_data(total, fmt_dur, "SINCE MIDNIGHT", d, dr, False, s.daily_series(today, 7, "total", "*"))
-        d, dr = delta(shorts, p_shorts)
-        sub = f"{swipes} SHORTS WATCHED" if swipes else "NOTHING TO REPORT" if shorts < 60 else "KEEP AN EYE ON IT"
-        self.c_shorts.set_data(shorts, fmt_dur, sub, d, dr, dr > 0, s.daily_series(today, 7, "shorts", "youtube"))
-        sub = f"{stopped} STOPPED WHEN ASKED" if nudges else "NO INTERRUPTIONS"
-        self.c_nudges.set_data(nudges, lambda x: f"{round(x)}", sub, "", 0, False, s.event_series(today, 7, "nudge"))
-
-        # timeline rows: Shorts first, then the three heaviest items
-        items = self._ranked(today.isoformat())
-        rows = []
-        if shorts > 0:
-            rows.append(("YouTube Shorts", s.hourly(today.isoformat(), "shorts", "youtube"), True))
-        for kind, nm, _secs in items[:3 if shorts > 0 else 4]:
-            rows.append((display_name(kind, nm), s.hourly(today.isoformat(), kind, nm), False))
-        self.timeline.set_rows(rows)
-
-        self._fill_top(items[:5], total)
-
-        # header status
-        self.update_status(getattr(self, "_last_snap", None))
-
-    def _ranked(self, day: str):
-        return self.ctx.store.by_name(day, day, ("app", "site"))
-
-    def _fill_top(self, items, total):
-        keys = [(k, n) for k, n, _ in items]
-        if keys == self._top_keys:                     # same apps in the same order: just update the numbers
-            for row, (_k, _n, secs) in zip(self._top_widgets, items):
-                row.set_secs(secs)
-            return
-        self._top_keys, self._top_widgets = keys, []
-        while self.top_rows.count():
-            w = self.top_rows.takeAt(0).widget()
-            if w:
-                w.deleteLater()
-        if not items:
-            empty = QWidget()
-            lay = QVBoxLayout(empty)
-            lay.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            m = Mascot(px=3, mood="idle", fill=T.SURFACE)
-            lay.addWidget(m, 0, Qt.AlignmentFlag.AlignHCenter)
-            lay.addWidget(mk_label("Nothing logged yet.", T.sans(13, T.QFont.Weight.Medium), T.INK, Qt.AlignmentFlag.AlignHCenter))
-            lay.addWidget(mk_label("PHI is watching quietly_", T.mono(10), T.GRAY, Qt.AlignmentFlag.AlignHCenter))
-            self.top_rows.addWidget(empty)
-            return
-        for i, (kind, nm, secs) in enumerate(items):
-            row = TopRow(display_name(kind, nm), kind, secs, delay=i * 70)
-            self._top_widgets.append(row)
-            self.top_rows.addWidget(row)
-
-    def update_status(self, snap: dict | None) -> None:
-        if snap is None:
-            return
-        self._last_snap = snap
-        st = snap["status"]
-        if st == "paused":
-            self.chip.set_state("PAUSED", "off")
-        elif st == "shorts":
-            self.chip.set_state("SHORTS DETECTED", "alert")
-        elif st == "idle":
-            self.chip.set_state("IDLE", "off")
-        else:
-            self.chip.set_state("MONITORING", "on")
-        if snap["link"]:
-            self.link_lbl.setText("BROWSER LINK ● ONLINE")
-        else:
-            self.link_lbl.setText("BROWSER LINK ○ OFFLINE")
-
-
-class TopRow(QWidget):
-    def __init__(self, name: str, kind: str, secs: float, delay: int = 0):
-        super().__init__()
-        self.setFixedHeight(46)
-        lay = QHBoxLayout(self)
-        lay.setContentsMargins(6, 0, 6, 0)
-        tile = QLabel(name[:1].upper())
-        tile.setFixedSize(28, 28)
-        tile.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        tile.setFont(T.mono(12, T.QFont.Weight.Bold))
-        tile.setStyleSheet(f"background:{T.PAPER}; color:{T.INK}; border:1px solid {T.LINE}; border-radius:8px;")
-        lay.addWidget(tile)
-        col = QVBoxLayout()
-        col.setSpacing(0)
-        col.addWidget(mk_label(name, T.sans(13, T.QFont.Weight.Medium)))
-        col.addWidget(mk_label(kind.upper(), T.mono(9, spacing=1.2), T.GRAY))
-        lay.addLayout(col, 1)
-        self.time_lbl = mk_label(fmt_dur(secs), T.mono(12, T.QFont.Weight.Medium), T.INK, Qt.AlignmentFlag.AlignRight)
-        lay.addWidget(self.time_lbl)
-        self._secs_text = self.time_lbl.text()
-        self._delay = QTimer(self)
-        self._delay.setSingleShot(True)
-        self._delay.timeout.connect(self._fade_in)
-        self.replay(delay)
-
-    def set_secs(self, secs: float) -> None:
-        text = fmt_dur(secs)
-        if text != self._secs_text:
-            self._secs_text = text
-            self.time_lbl.setText(text)
-
-    def replay(self, delay: int = 0) -> None:
-        """Fade in. The effect lives only for the fade (these rows are tiny, so it is cheap)."""
-        eff = QGraphicsOpacityEffect(self)
-        eff.setOpacity(0.0)
-        self.setGraphicsEffect(eff)
-        self._delay.start(max(0, delay))
-
-    def _fade_in(self) -> None:
-        eff = self.graphicsEffect()
-        if eff is None:
-            return
-        a = QPropertyAnimation(eff, b"opacity", self)
-        a.setDuration(380)
-        a.setStartValue(0.0)
-        a.setEndValue(1.0)
-        a.setEasingCurve(QEasingCurve.Type.OutCubic)
-        a.finished.connect(lambda: self.setGraphicsEffect(None))
-        a.start(QPropertyAnimation.DeletionPolicy.DeleteWhenStopped)
-
-
-# ======================================================================== APPS & SITES
-class AppsPage(Page):
-    def __init__(self, ctx: Ctx):
-        super().__init__()
-        self.ctx = ctx
-        v = QVBoxLayout(self)
-        v.setContentsMargins(30, 6, 30, 26)
-        v.setSpacing(16)
-        v.addWidget(mk_label("Apps & Sites", T.sans(26, T.QFont.Weight.Medium)))
-        v.addWidget(mk_label("Where your time actually went.", T.sans(13), T.GRAY))
-
-        bar = QHBoxLayout()
-        self.range_seg = Segmented(["Today", "7 days"])
-        self.kind_seg = Segmented(["All", "Apps", "Sites"])
-        bar.addWidget(self.range_seg)
-        bar.addStretch(1)
-        self.sum_lbl = mk_label("", T.mono(11, spacing=.8), T.GRAY, Qt.AlignmentFlag.AlignRight)
-        bar.addWidget(self.sum_lbl)
-        bar.addSpacing(14)
-        bar.addWidget(self.kind_seg)
-        v.addLayout(bar)
-
-        chart_panel = Panel(hoverable=False)
-        cl = QVBoxLayout(chart_panel)
-        cl.setContentsMargins(20, 14, 20, 10)
-        legend = QHBoxLayout()
-        legend.addWidget(caps("Active time"))
-        legend.addStretch(1)
-        legend.addWidget(mk_label("■ ACTIVE   ", T.mono(9, spacing=1), T.INK))
-        legend.addWidget(mk_label("■ SHORTS", T.mono(9, spacing=1), T.RED))
-        cl.addLayout(legend)
-        self.chart = PixelChart()
-        cl.addWidget(self.chart)
-        v.addWidget(chart_panel, 3)
-
-        list_panel = Panel(hoverable=False)
-        ll = QVBoxLayout(list_panel)
-        ll.setContentsMargins(10, 12, 10, 10)
-        ll.setSpacing(0)
-        t = caps("Breakdown")
-        t.setContentsMargins(10, 0, 0, 4)
-        ll.addWidget(t)
-        self.scroll = QScrollArea()
-        self.scroll.setWidgetResizable(True)
-        self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self.scroll.viewport().setAutoFillBackground(False)
-        self.holder = QWidget()
-        self.holder.setAutoFillBackground(False)
-        self.rows = QVBoxLayout(self.holder)
-        self.rows.setContentsMargins(0, 0, 0, 0)
-        self.rows.setSpacing(0)
-        self.rows.addStretch(1)
-        self.scroll.setWidget(self.holder)
-        ll.addWidget(self.scroll)
-        v.addWidget(list_panel, 4)
-
-        self.range_seg.changed.connect(lambda _: self.refresh(True))
-        self.kind_seg.changed.connect(lambda _: self.refresh(True))
-        self._keys: list | None = None
-        self._rows_w: list[UsageRow] = []
-
-    def enter(self) -> None:
-        self.chart.replay()
-        for i, row in enumerate(self._rows_w):
-            row.replay(60 + 40 * i)
-
-    def refresh(self, force: bool = False) -> None:
-        s = self.ctx.store
-        self.ctx.engine.flush()        # cheap now (WAL + synchronous=NORMAL); the page reads from the database
-        today = date.today()
-        week = self.range_seg.index == 1
-        days = 7 if week else 1
-        d0 = today - timedelta(days=days - 1)
-
-        if week:
-            totals = s.daily_series(today, 7, "total", "*")
-            shorts = s.daily_series(today, 7, "shorts", "youtube")
-            cols = [((today - timedelta(days=6 - i)).strftime("%a").upper(), totals[i], shorts[i], i == 6) for i in range(7)]
-            avg = sum(totals) / 7
-            self.sum_lbl.setText(f"TOTAL {fmt_dur(sum(totals))}  ·  AVG {fmt_dur(avg)}/DAY")
-        else:
-            hours = s.hourly(today.isoformat(), "total", "*")
-            sh = s.hourly(today.isoformat(), "shorts", "youtube")
-            cols = [(f"{h:02d}" if h % 3 == 0 else "", hours[h], sh[h], h == datetime.now().hour) for h in range(24)]
-            self.sum_lbl.setText(f"TOTAL {fmt_dur(sum(hours))}  ·  SHORTS {fmt_dur(sum(sh))}")
-        self.chart.set_columns(cols, replay=force)
-
-        kinds = {0: ("app", "site"), 1: ("app",), 2: ("site",)}[self.kind_seg.index]
-        data = s.by_name(d0.isoformat(), today.isoformat(), kinds)
-        shorts_total = sum(s.daily_series(today, days, "shorts", "youtube"))
-        denom = max(sum(sec for _, _, sec in data), 1.0)
-        entries = []                                   # (key, name, tag, seconds, share, red)
-        if shorts_total >= 1 and self.kind_seg.index != 1:
-            entries.append((("shorts", "youtube"), "YouTube Shorts", "inside youtube", shorts_total, min(1.0, shorts_total / denom), True))
-        for kind, nm, sec in data:
-            entries.append(((kind, nm), display_name(kind, nm), kind, sec, sec / denom, False))
-
-        keys = [e[0] for e in entries]
-        if keys == self._keys and not force:           # same rows: slide the bars and numbers, rebuild nothing
-            for row, e in zip(self._rows_w, entries):
-                row.set_values(e[3], e[4])
-            return
-        self._keys, self._rows_w = keys, []
-        while self.rows.count() > 1:
-            w = self.rows.takeAt(0).widget()
-            if w:
-                w.deleteLater()
-        for idx, (_key, name, tag, sec, share, red) in enumerate(entries):
-            row = UsageRow(name, tag, sec, share, red, 40 * (idx + 1))
-            self._rows_w.append(row)
-            self.rows.insertWidget(idx, row)
-        if not entries:
-            self.rows.insertWidget(0, mk_label("Nothing here yet. Use your computer and come back_", T.mono(11), T.GRAY, Qt.AlignmentFlag.AlignCenter))
-
-
 # ======================================================================== SETTINGS
 class Swatch(QWidget):
     """A colour chip with its hex value; click to pick a new colour."""
@@ -459,13 +126,45 @@ class SiteRow(QWidget):
         lay.addWidget(tile)
         col = QVBoxLayout()
         col.setSpacing(0)
-        col.addWidget(mk_label(pretty_site(entry["domain"]), T.sans(13, T.QFont.Weight.Medium)))
-        col.addWidget(mk_label(entry["domain"], T.mono(10), T.GRAY))
+        yt = entry["domain"] == "youtube.com"
+        col.addWidget(mk_label("YouTube (without Shorts)" if yt else pretty_site(entry["domain"]), T.sans(13, T.QFont.Weight.Medium)))
+        col.addWidget(mk_label("youtube.com · Shorts have their own limits" if yt else entry["domain"], T.mono(10), T.GRAY))
         lay.addLayout(col, 1)
         self.step = Stepper(entry["limit"], 1, 600, 5, "min/day")
         self.step.setFixedWidth(150)
         self.step.changed.connect(lambda val: (entry.__setitem__("limit", val), on_change()))
         lay.addWidget(self.step)
+        tog = Toggle(entry["enabled"])
+        tog.toggled.connect(lambda on: (entry.__setitem__("enabled", on), on_change()))
+        lay.addWidget(tog)
+        rm = LinkButton("remove", size=11)
+        rm.clicked.connect(lambda: on_remove(entry))
+        lay.addWidget(rm)
+
+
+class AppRow(QWidget):
+    """A desktop app with a daily limit."""
+
+    def __init__(self, entry: dict, on_change, on_remove):
+        super().__init__()
+        lay = QHBoxLayout(self)
+        lay.setContentsMargins(18, 8, 18, 8)
+        lay.setSpacing(12)
+        tile = QLabel(pretty_app(entry["exe"])[:1].upper())
+        tile.setFixedSize(28, 28)
+        tile.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        tile.setFont(T.mono(12, T.QFont.Weight.Bold))
+        tile.setStyleSheet(f"background:{T.PAPER}; color:{T.INK}; border:1px solid {T.LINE}; border-radius:8px;")
+        lay.addWidget(tile)
+        col = QVBoxLayout()
+        col.setSpacing(0)
+        col.addWidget(mk_label(pretty_app(entry["exe"]), T.sans(13, T.QFont.Weight.Medium)))
+        col.addWidget(mk_label(entry["exe"], T.mono(10), T.GRAY))
+        lay.addLayout(col, 1)
+        step = Stepper(entry["limit"], 1, 1440, 5, "min/day")
+        step.setFixedWidth(150)
+        step.changed.connect(lambda val: (entry.__setitem__("limit", val), on_change()))
+        lay.addWidget(step)
         tog = Toggle(entry["enabled"])
         tog.toggled.connect(lambda on: (entry.__setitem__("enabled", on), on_change()))
         lay.addWidget(tog)
@@ -617,9 +316,25 @@ class SettingsPage(Page):
         ]))
         self._build_reminders()
 
+        # --- watched apps
+        v.addSpacing(8)
+        v.addWidget(caps("Watched apps"))
+        self.apps_panel = Panel(hoverable=False)
+        self.apps_lay = QVBoxLayout(self.apps_panel)
+        self.apps_lay.setContentsMargins(0, 6, 0, 6)
+        self.apps_lay.setSpacing(0)
+        v.addWidget(self.apps_panel)
+        v.addWidget(self._add_field("add an app, e.g. discord", self._add_app))
+        self.recent_box = QWidget()
+        self.recent_lay = QHBoxLayout(self.recent_box)
+        self.recent_lay.setContentsMargins(0, 0, 0, 0)
+        self.recent_lay.setSpacing(8)
+        v.addWidget(self.recent_box)
+        self._build_apps()
+
         # --- watched sites
         v.addSpacing(8)
-        v.addWidget(caps("Watched sites"))
+        v.addWidget(caps("Watched websites"))
         self.sites_panel = Panel(hoverable=False)
         self.sites_lay = QVBoxLayout(self.sites_panel)
         self.sites_lay.setContentsMargins(0, 6, 0, 6)
@@ -737,6 +452,48 @@ class SettingsPage(Page):
     def _test_reminder(self, item: dict) -> None:
         if self.ctx.scheduler:
             self.ctx.scheduler.test(item)
+
+    def _save_apps(self) -> None:
+        self.ctx.cfg.set("watched_apps", list(self.ctx.cfg.get("watched_apps")))
+
+    def _build_apps(self) -> None:
+        self._clear(self.apps_lay)
+        apps = self.ctx.cfg.get("watched_apps")
+        if not apps:
+            self.apps_lay.addWidget(mk_label("  No watched apps. Add one below, or pick a recent one.", T.mono(11), T.GRAY))
+        for e in apps:
+            self.apps_lay.addWidget(AppRow(e, self._save_apps, self._remove_app))
+        # one-click suggestions: the apps you used most in the last week
+        self._clear(self.recent_lay)
+        watched = {e["exe"].lower() for e in apps}
+        today = date.today()
+        rows = self.ctx.store.by_name((today - timedelta(days=7)).isoformat(), today.isoformat(), ("app",))
+        picks = [name for _k, name, secs in rows if name not in watched and secs >= 60][:6]
+        if picks:
+            self.recent_lay.addWidget(mk_label("RECENT", T.mono(9, spacing=1.4), T.GRAY))
+        for exe in picks:
+            btn = PillButton(f"+ {pretty_app(exe)}", "secondary", height=28)
+            btn.setFixedWidth(max(90, 24 + 8 * len(pretty_app(exe))))
+            btn.clicked.connect(lambda _=False, x=exe: self._add_app(x))
+            self.recent_lay.addWidget(btn)
+        self.recent_lay.addStretch(1)
+
+    def _add_app(self, text: str) -> bool:
+        exe = text.strip().lower().replace(" ", "")
+        if not exe or any(ch in exe for ch in '\\/:*?"<>|'):
+            return False
+        if not exe.endswith(".exe"):
+            exe += ".exe"
+        apps = list(self.ctx.cfg.get("watched_apps"))
+        if not any(a["exe"].lower() == exe for a in apps):
+            apps.append({"exe": exe, "limit": 60, "enabled": True})
+            self.ctx.cfg.set("watched_apps", apps)
+            self._build_apps()
+        return True
+
+    def _remove_app(self, entry: dict) -> None:
+        self.ctx.cfg.set("watched_apps", [a for a in self.ctx.cfg.get("watched_apps") if a is not entry])
+        self._build_apps()
 
     def _build_sites(self):
         self._clear(self.sites_lay)

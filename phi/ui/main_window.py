@@ -10,7 +10,8 @@ from PySide6.QtWidgets import QHBoxLayout, QSizeGrip, QStackedWidget, QVBoxLayou
 from . import theme as T
 from .mascot import Mascot, WordMark, ghost_icon
 from .motion import Spring, Ticker, burst, float_text
-from .pages import AppsPage, Ctx, Page, SettingsPage, TodayPage, mk_label
+from .dashboard import ActivityPage, TodayPage
+from .pages import Ctx, Page, SettingsPage, mk_label
 from .widgets import animator, label_font_paint, run
 
 
@@ -46,7 +47,7 @@ def _icon(p: QPainter, kind: str, cx: float, cy: float, c: QColor):
 
 
 class Sidebar(QWidget):
-    ITEMS = [("today", "Today"), ("apps", "Apps & Sites"), ("settings", "Settings")]
+    ITEMS = [("today", "Today"), ("apps", "Activity"), ("settings", "Settings")]
     ROW_H, GAP, TOP = 40, 4, 92
 
     def __init__(self, on_select):
@@ -289,7 +290,7 @@ class MainWindow(QWidget):
         self.titlebar = TitleBar(self)
         right.addWidget(self.titlebar)
         self.stack = QStackedWidget()
-        self.pages: list[Page] = [TodayPage(self.ctx), AppsPage(self.ctx), SettingsPage(self.ctx)]
+        self.pages: list[Page] = [TodayPage(self.ctx), ActivityPage(self.ctx), SettingsPage(self.ctx)]
         for pg in self.pages:
             self.stack.addWidget(pg)
         right.addWidget(self.stack, 1)

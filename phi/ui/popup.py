@@ -121,6 +121,7 @@ class NudgePopup(QWidget):
         "shorts": [["STOP SCROLLING.", "ENOUGH SHORTS."], ["AGAIN? REALLY?"], ["YOU KNOW THE DRILL."]],
         "daily": [["BUDGET BLOWN.", "THAT'S ENOUGH TODAY."], ["STILL HERE?"], ["NO MORE TODAY."]],
         "site": [["LIMIT HIT.", "TIME'S UP."], ["AGAIN?"], ["GO DO SOMETHING."]],
+        "app": [["APP LIMIT HIT.", "STEP AWAY."], ["AGAIN?"], ["GO DO SOMETHING ELSE."]],
     }
 
     def __init__(self, payload: dict, extend_min: int, pause_min: int):
@@ -152,8 +153,8 @@ class NudgePopup(QWidget):
             stop_text = "I'm done — close Shorts"
         else:
             self.sub = f"{minutes_text(self._seconds)} on {label} today."
-            stop_text = f"I'm done — close {label}"
-        self.status = {"shorts": "DISTRACTION DETECTED", "daily": "DAILY BUDGET REACHED", "site": "SITE LIMIT REACHED"}[self.kind]
+            stop_text = f"I'm done — minimize {label}" if self.kind == "app" else f"I'm done — close {label}"
+        self.status = {"shorts": "DISTRACTION DETECTED", "daily": "DAILY BUDGET REACHED", "site": "SITE LIMIT REACHED", "app": "APP LIMIT REACHED"}[self.kind]
 
         root = QVBoxLayout(self)
         root.setContentsMargins(SHADOW + 28, SHADOW + 22, SHADOW + 28, SHADOW + 24)
@@ -392,7 +393,7 @@ class PopupController:
             popup = LockScreen(payload, self.cfg.get("extend_min"), self.cfg.get("lockdown_seconds"))
         else:
             popup = NudgePopup(payload, self.cfg.get("extend_min"), self.cfg.get("pause_min"))
-        pausing = bool(self.cfg.get("pause_video"))
+        pausing = bool(self.cfg.get("pause_video")) and payload["kind"] != "app"
         popup.action.connect(lambda a, pl=payload: self._on_action(a, pl, pausing))
         popup.destroyed.connect(lambda: setattr(self, "current", None) if self.current is popup else None)
         popup.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
