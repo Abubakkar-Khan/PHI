@@ -456,7 +456,30 @@ PHI/
 
 ## Install and run
 
-You need Windows 10 or 11 and Python 3.12.
+PHI runs on Windows 10 and 11 (64-bit). Pick one of three ways.
+
+### Option 1: the installer (recommended)
+
+1. Get `PHI-Setup.exe`. Build it yourself with `.\build.ps1` (see [Build the installer](#build-the-installer)); it lands in `installer_output\`.
+2. Double-click it and follow the steps. It installs for your user only, so **no administrator rights are needed**. It also installs the Microsoft Visual C++ runtime if your PC lacks it.
+3. Leave "Launch PHI" ticked and finish. PHI opens its window and puts a ghost icon in the system tray (click the `^` arrow if you cannot see it). Closing the window keeps PHI running in the tray; **Quit** is in the tray menu.
+4. Optional: tick "Create a desktop shortcut" during setup. Start Menu shortcuts are always created.
+
+Notes:
+
+- **Windows SmartScreen** may say "Windows protected your PC" because the installer is not code-signed. Click **More info**, then **Run anyway**.
+- **Start with Windows** is on by default and can be switched off in Settings. The uninstaller removes it.
+- **Update** by running a newer `PHI-Setup.exe` over the old one. Your data in `%APPDATA%\PHI` is kept. If PHI is running, quit it from the tray first, or the old copy keeps running its old code.
+- **Uninstall** from Windows Settings → Apps → PHI. Your data folder `%APPDATA%\PHI` is left behind; delete it if you want everything gone.
+- The extension folder is copied to `<install folder>\extension`, in case you want the optional [browser extension](#browser-extension).
+
+### Option 2: portable (no install)
+
+Build with `.\build.ps1` and run `dist\PHI\PHI.exe`. Keep the whole `dist\PHI` folder together; the exe needs the `_internal` folder beside it.
+
+### Option 3: from source
+
+You need Python 3.12.
 
 ```powershell
 git clone https://github.com/Abubakkar-Khan/PHI.git
