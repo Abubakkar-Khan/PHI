@@ -656,21 +656,10 @@ class SettingsPage(Page):
         # --- data
         v.addSpacing(8)
         v.addWidget(caps("Data"))
-        self.del_btn = PillButton("Delete all data", "secondary", height=32)
-        self.del_btn.setFixedWidth(150)
-        self.del_btn.clicked.connect(self._delete)
-        self._armed = False
-        open_btn = PillButton("Open folder", "secondary", height=32)
-        open_btn.setFixedWidth(120)
-        open_btn.clicked.connect(lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(os.path.dirname(ctx.store.path))))
-        btns = QWidget()
-        bl = QHBoxLayout(btns)
-        bl.setContentsMargins(0, 0, 0, 0)
-        bl.addWidget(open_btn)
-        bl.addWidget(self.del_btn)
         v.addWidget(self._group([
             SettingRow("Keep history for", "Older days are deleted automatically.", self._stepper("retention_days", 7, 730, 7, "days")),
-            SettingRow("Stored locally", "No keystrokes. No screenshots. No page content. Only app names, site names and durations.", btns, last=True),
+            SettingRow("Stored locally", "No keystrokes. No screenshots. No page content. Only app names, site names and durations.",
+                       mk_label("LOCAL ONLY", T.mono(11, T.QFont.Weight.Medium, 1.6), T.GRAY, Qt.AlignmentFlag.AlignRight), last=True),
         ]))
         v.addStretch(1)
 
@@ -803,22 +792,3 @@ class SettingsPage(Page):
         self.ctx.cfg.set("excluded_sites", [x for x in self.ctx.cfg.get("excluded_sites") if x != d])
         self._build_excluded()
 
-    def _delete(self):
-        if not self._armed:
-            self._armed = True
-            self.del_btn.setText("Click again to confirm")
-            self.del_btn.setFixedWidth(190)
-            from PySide6.QtCore import QTimer
-            QTimer.singleShot(3500, self._disarm)
-            return
-        self.ctx.engine.flush()
-        self.ctx.store.delete_all()
-        self.ctx.engine._load_today()
-        self._disarm()
-        self.del_btn.setText("Deleted ✓")
-
-    def _disarm(self):
-        self._armed = False
-        if self.del_btn.text() != "Deleted ✓":
-            self.del_btn.setText("Delete all data")
-            self.del_btn.setFixedWidth(150)
