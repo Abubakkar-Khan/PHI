@@ -24,6 +24,7 @@ class Ctx:
     store: Store
     cfg: Settings
     engine: Engine
+    scheduler: object = None      # ReminderScheduler, set by the app after startup
 
 
 def mk_label(text: str, font, color: str | None = None, align=Qt.AlignmentFlag.AlignLeft) -> QLabel:
@@ -473,6 +474,73 @@ class SiteRow(QWidget):
         lay.addWidget(rm)
 
 
+class ReminderRow(QWidget):
+    """One timer/alarm: on/off, message, every N minutes or at a time of day, sound, test, remove."""
+
+    def __init__(self, item: dict, on_change, on_remove, on_test):
+        super().__init__()
+        self.item = item
+        lay = QHBoxLayout(self)
+        lay.setContentsMargins(18, 8, 18, 8)
+        lay.setSpacing(10)
+
+        on = Toggle(bool(item.get("enabled")))
+        on.toggled.connect(lambda v: (item.__setitem__("enabled", v), on_change()))
+        lay.addWidget(on)
+
+        self.msg = QLineEdit(item.get("message", ""))
+        self.msg.setPlaceholderText("message, e.g. Take a break")
+        self.msg.setFixedHeight(30)
+        self.msg.setMinimumWidth(180)
+        self.msg.editingFinished.connect(lambda: (item.__setitem__("message", self.msg.text().strip() or "Take a break"), on_change()))
+        lay.addWidget(self.msg, 1)
+
+        seg = Segmented(["Every", "At"])
+        seg.set_index(1 if item.get("mode") == "daily" else 0)
+        lay.addWidget(seg)
+
+        self.every = Stepper(int(item.get("every_min", 30)), 1, 720, 5, "min")
+        self.every.changed.connect(lambda val: (item.__setitem__("every_min", val), on_change()))
+        lay.addWidget(self.every)
+
+        self.at = QLineEdit(item.get("time", "13:00"))
+        self.at.setInputMask("99:99")
+        self.at.setFixedSize(76, 30)
+        self.at.setFont(T.mono(12))
+        self.at.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.at.editingFinished.connect(self._commit_time(on_change))
+        lay.addWidget(self.at)
+
+        def show_mode(daily: bool) -> None:
+            self.every.setVisible(not daily)
+            self.at.setVisible(daily)
+        show_mode(item.get("mode") == "daily")
+        seg.changed.connect(lambda i: (item.__setitem__("mode", "daily" if i else "interval"), show_mode(bool(i)), on_change()))
+
+        snd = Toggle(bool(item.get("sound", True)))
+        snd.setToolTip("Play a chime")
+        snd.toggled.connect(lambda v: (item.__setitem__("sound", v), on_change()))
+        lay.addWidget(snd)
+
+        test = LinkButton("test", size=11)
+        test.clicked.connect(lambda: on_test(item))
+        rm = LinkButton("remove", size=11)
+        rm.clicked.connect(lambda: on_remove(item))
+        lay.addWidget(test)
+        lay.addWidget(rm)
+
+    def _commit_time(self, on_change):
+        def go():
+            from ..reminders import valid_time
+            text = self.at.text()
+            if valid_time(text):
+                self.item["time"] = text
+                on_change()
+            else:
+                self.at.setText(self.item.get("time", "13:00"))
+        return go
+
+
 class SettingsPage(Page):
     def __init__(self, ctx: Ctx):
         super().__init__()
@@ -525,6 +593,29 @@ class SettingsPage(Page):
             SettingRow("“Pause reminders” lasts", "", self._stepper("pause_min", 5, 480, 5, "min")),
             SettingRow("“It's for something important” lasts", "No nudges for this long.", self._stepper("bypass_min", 5, 480, 5, "min"), last=True),
         ]))
+
+        # --- timers & alarms
+        v.addSpacing(8)
+        v.addWidget(caps("Timers & alarms"))
+        self.rem_panel = Panel(hoverable=False)
+        self.rem_lay = QVBoxLayout(self.rem_panel)
+        self.rem_lay.setContentsMargins(0, 6, 0, 6)
+        self.rem_lay.setSpacing(0)
+        v.addWidget(self.rem_panel)
+        add_row = QWidget()
+        arl = QHBoxLayout(add_row)
+        arl.setContentsMargins(0, 0, 0, 0)
+        add_btn = PillButton("Add timer / alarm", "primary", "plus", height=34)
+        add_btn.setFixedWidth(190)
+        add_btn.clicked.connect(self._add_reminder)
+        arl.addWidget(add_btn)
+        arl.addSpacing(12)
+        arl.addWidget(mk_label("Full-screen, in your theme. Interval timers restart when you step away for 5 min.", T.sans(12), T.GRAY), 1)
+        v.addWidget(add_row)
+        v.addWidget(self._group([
+            SettingRow("Snooze lasts", "How long the Snooze button waits.", self._stepper("reminder_snooze_min", 1, 60, 1, "min"), last=True),
+        ]))
+        self._build_reminders()
 
         # --- watched sites
         v.addSpacing(8)
@@ -633,6 +724,30 @@ class SettingsPage(Page):
             item = layout.takeAt(0)
             if item.widget():
                 item.widget().deleteLater()
+
+    def _save_reminders(self) -> None:
+        self.ctx.cfg.set("reminder_items", list(self.ctx.cfg.get("reminder_items")))
+
+    def _build_reminders(self) -> None:
+        self._clear(self.rem_lay)
+        items = self.ctx.cfg.get("reminder_items")
+        if not items:
+            self.rem_lay.addWidget(mk_label("  No timers yet. Add one, e.g. \"Take a break\" every 30 min.", T.mono(11), T.GRAY))
+        for it in items:
+            self.rem_lay.addWidget(ReminderRow(it, self._save_reminders, self._remove_reminder, self._test_reminder))
+
+    def _add_reminder(self) -> None:
+        from ..reminders import new_reminder
+        self.ctx.cfg.set("reminder_items", list(self.ctx.cfg.get("reminder_items")) + [new_reminder()])
+        self._build_reminders()
+
+    def _remove_reminder(self, item: dict) -> None:
+        self.ctx.cfg.set("reminder_items", [r for r in self.ctx.cfg.get("reminder_items") if r is not item])
+        self._build_reminders()
+
+    def _test_reminder(self, item: dict) -> None:
+        if self.ctx.scheduler:
+            self.ctx.scheduler.test(item)
 
     def _build_sites(self):
         self._clear(self.sites_lay)

@@ -37,6 +37,11 @@ DEFAULTS = {
     "theme_bg": "#F0EFEB",         # custom theme colours
     "theme_text": "#171717",
     "theme_accent": "#E53935",
+    "reminder_snooze_min": 5,
+    "reminder_items": [            # timers and alarms; shown full-screen
+        {"id": "break30", "message": "Take a break", "mode": "interval", "every_min": 30,
+         "time": "13:00", "enabled": False, "sound": True},
+    ],
     "reminders": True,
     "pause_video": True,           # pause the video behind the lock; resumes if you buy more time
     "lockdown": True,              # full-screen takeover instead of a small card

@@ -1,857 +1,540 @@
-# PHI Focus
+# PHI
 
 <p align="center">
-  <img src="tools/mascots.png" alt="PHI Mascot" width="200">
+  <img src="docs/mascot-moods.png" alt="PHI's pixel nerd mascot in five moods: monitoring, idle, alert, celebrate, sleep" width="100%">
 </p>
 
 <p align="center">
-  <b>A privacy-first attention companion that protects your focus.</b><br>
-  <i>Stay intentional. Your time matters.</i>
+  <b>A privacy-first desktop companion that notices when you are doomscrolling YouTube Shorts and stops you.</b><br>
+  Everything runs on your computer. No account, no cloud, no telemetry.
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Platform-Windows-blue" alt="Platform">
-  <img src="https://img.shields.io/badge/Language-Python%203.11+-yellow" alt="Python">
-  <img src="https://img.shields.io/badge/Framework-PySide6%20(Qt)-green" alt="Framework">
-  <img src="https://img.shields.io/badge/License-MIT-orange" alt="License">
+  <img src="https://img.shields.io/badge/platform-Windows%2010%2F11-blue" alt="Windows 10/11">
+  <img src="https://img.shields.io/badge/python-3.12-yellow" alt="Python 3.12">
+  <img src="https://img.shields.io/badge/UI-PySide6%20(Qt)-green" alt="PySide6">
+  <img src="https://img.shields.io/badge/data-100%25%20local-lightgrey" alt="Local data">
 </p>
 
 ---
 
 ## Table of Contents
 
-1. [Introduction](#introduction)
-2. [Tech Stack](#tech-stack)
-3. [System Architecture](#system-architecture)
-4. [Data Flow](#data-flow)
-5. [Database Design](#database-design)
-6. [Project Structure](#project-structure)
-7. [Installation & Setup](#installation--setup)
-8. [Browser Extension](#browser-extension)
-9. [Privacy & Security](#privacy--security)
-10. [Development Roadmap](#development-roadmap)
-11. [Contributing](#contributing)
-12. [License](#license)
+1. [What PHI does](#what-phi-does)
+2. [Meet the mascot](#meet-the-mascot)
+3. [Tech stack](#tech-stack)
+4. [Architecture](#architecture)
+5. [How detection works](#how-detection-works)
+6. [The nudge](#the-nudge)
+7. [Animation and performance](#animation-and-performance)
+8. [Data model](#data-model)
+9. [Project structure](#project-structure)
+10. [Install and run](#install-and-run)
+11. [Build the installer](#build-the-installer)
+12. [Browser extension](#browser-extension)
+13. [Privacy and security](#privacy-and-security)
+14. [Status](#status)
+15. [Contributing](#contributing)
+16. [License](#license)
 
 ---
 
-## Introduction
+## What PHI does
 
-### What is PHI Focus?
+PHI sits in your system tray and watches which app or site is in focus, counting time only while you are actually active. When YouTube Shorts (or another site you watch) crosses a limit you set, PHI interrupts you with a full-screen lock or a small card, pauses the video, and closes the tab for you unless you decide otherwise.
 
-PHI Focus is a desktop application that runs quietly in your system tray, monitoring your app and website usage. When it detects you've been spending too much time on distracting content—particularly YouTube Shorts or other configured sites—it gently nudges you with a reminder to help you stay on track.
+- **Tracks time** per app and per site, with a Today dashboard, 7-day charts and an hourly timeline.
+- **Detects Shorts** by reading the browser's address bar. The browser extension is optional.
+- **Interrupts you** with a lock screen or a card, a siren, a countdown, and friction that grows each time it has to ask again.
+- **Closes Shorts for you** through the extension, or with Ctrl+W when no extension is connected.
+- **Keeps everything local** in a SQLite file under `%APPDATA%\PHI`.
 
-Named after the Greek letter Φ (Phi), representing the golden ratio and balance, PHI helps you maintain equilibrium between productive work and potentially time-wasting activities.
-
-### Core Principles
-
-| Principle | Description |
-|-----------|-------------|
-| 🔒 **Privacy First** | No keystrokes, no screenshots, no page content. Only app names, site domains, and time durations. |
-| 💾 **Local Only** | Everything stays on your computer. No cloud, no accounts, no telemetry. |
-| ⚙️ **Deterministic** | No AI making decisions—just simple, configurable rules you control. |
-| 🎯 **Minimal** | Lightweight, unobtrusive, and respectful of system resources. |
-
-### Key Features
-
-- 📊 **Real-Time Monitoring** — Track active desktop applications and website usage via browser extension
-- 🎬 **YouTube Shorts Detection** — Identify Shorts playback, count swipe gestures, enforce session/daily limits
-- 💬 **Smart Nudge System** — Gentle popup reminders with configurable actions (stop, extend, pause, bypass)
-- 📈 **Analytics Dashboard** — Today view, 7-day charts, timelines, top apps and sites breakdown
-- ⚙️ **Fully Customizable** — Custom site limits, exclusion lists, adjustable thresholds
+Design rules: deterministic limits you control (no AI deciding anything), no keystroke logging, no screenshots, no page content.
 
 ---
 
-## Tech Stack
+## Meet the mascot
 
-### Technology Overview
+The mascot is a pixel-art nerd with wild hair, big square glasses, two antennae and one orange plus. It lives in the sidebar, the nudge card, the lock screen and the tray icon, and its mood follows what PHI sees.
+
+| Engine state | Mascot mood | What it does |
+|---|---|---|
+| Normal activity | `monitoring` | Looks around (follows your cursor), blinks, glints its glasses, pushes them up now and then |
+| No input / away | `idle` | Half-closed eyes, wandering gaze, occasional yawn |
+| Shorts detected | `alert` | Wide eyes, shaking, red `!`, sweat drop, red plus |
+| You chose to stop | `celebrate` | Happy eyes, blush, hops, confetti fountain |
+| Tracking paused | `sleep` | Eyes closed, glasses slip down, floating Zs |
+
+You can poke it in the sidebar. It hops, keep clicking and a `xN` combo appears, and after five quick clicks it gets dizzy. Hovering makes it smile.
+
+---
+
+## Tech stack
 
 ```mermaid
 graph TB
-    subgraph UI["User Interface Layer"]
-        QT[PySide6 Qt]
-        WIDGETS[Custom Widgets<br/>Panel, Charts, Timeline]
+    subgraph UI["Interface"]
+        QT["PySide6 (Qt 6.8)"]
+        WID["Hand-painted widgets"]
+        MAS["Pixel mascot + motion engine"]
     end
-    
-    subgraph APP["Application Logic Layer"]
-        ENGINE[Engine<br/>Monitor & State Machine]
-        BRIDGE[Bridge<br/>HTTP API Server]
+    subgraph CORE["Core"]
+        ENG["Engine<br/>500 ms tick, rules, nudges"]
+        RDR["UrlReader thread<br/>Windows UI Automation"]
+        BRG["Bridge thread<br/>HTTP on 127.0.0.1:47615"]
     end
-    
-    subgraph DATA["Data Persistence Layer"]
-        STORE[Store<br/>SQLite Database]
-        SETTINGS[Settings<br/>Key-Value Store]
+    subgraph DATA["Storage"]
+        DB[("SQLite, WAL")]
+        LOG["phi.log"]
     end
-    
-    subgraph SYS["System Integration Layer"]
-        WIN32[Win32 API<br/>ctypes]
-        REG[Registry<br/>Autostart]
+    subgraph OS["Windows"]
+        W32["user32 / kernel32<br/>via ctypes"]
+        UIA["UI Automation<br/>uiautomation package"]
+        REG["Registry Run key"]
     end
-    
-    subgraph EXT["External Components"]
-        BROWSER[Browser Extension<br/>TypeScript/JavaScript]
-    end
-    
-    UI --> APP
-    APP --> DATA
-    DATA --> SYS
-    BROWSER -.->|HTTP localhost:47615| BRIDGE
-    ENGINE -->|Qt Signals| UI
+    EXT["Browser extension<br/>optional, Manifest V3"]
+
+    UI --> CORE
+    CORE --> DATA
+    CORE --> OS
+    RDR --> UIA
+    EXT -.->|heartbeat, fallback| BRG
 ```
 
-### Component Breakdown
-
-| Component | Technology | Version | Purpose |
-|-----------|------------|---------|---------|
-| **UI Framework** | PySide6 (Qt for Python) | 6.6+ | Native cross-platform GUI |
-| **Language** | Python | 3.11+ | Application logic |
-| **Database** | SQLite | 3.x | Local data storage with WAL |
-| **IPC Protocol** | HTTP (JSON) | - | Extension communication |
-| **System APIs** | ctypes / Win32 | - | Windows integration |
-| **Browser Extension** | TypeScript | - | Chrome/Firefox integration |
-
-### Why These Technologies?
-
-| Choice | Reason |
-|--------|--------|
-| **PySide6 (Qt)** | Native Windows look, rich animation framework, excellent signal/slot mechanism |
-| **SQLite** | Zero-configuration, serverless, single file, WAL mode for concurrency |
-| **Local HTTP** | Browser extensions can't access native APIs directly, HTTP is language-agnostic |
-| **No AI/ML** | Deterministic rules are predictable, trustworthy, and user-controllable |
+| Layer | Technology | Notes |
+|---|---|---|
+| UI | PySide6 6.8.3 | Everything is painted by hand with `QPainter`; no stylesheets for controls |
+| Language | Python 3.12 | The build environment; 3.11+ should work |
+| Address-bar reading | `uiautomation` 2.0.29 | Reads the omnibox of Chromium browsers |
+| Storage | SQLite (WAL, `synchronous=NORMAL`) | One file, thread-safe through an `RLock` |
+| Windows access | `ctypes` | Foreground window, idle time, focus, Ctrl+W, media key |
+| Extension | Chromium Manifest V3 | Optional fallback; talks to `127.0.0.1` only |
+| Packaging | PyInstaller + Inno Setup | `build.ps1` |
 
 ---
 
-## System Architecture
-
-### High-Level Architecture
+## Architecture
 
 ```mermaid
 graph TB
-    subgraph USER_COMPUTER["User's Computer"]
-        subgraph DESKTOP_APP["Desktop Application"]
-            subgraph UI_LAYER["Presentation Layer"]
-                TODAY[Today Page]
-                APPS[Apps Page]
-                SETTINGS_PG[Settings Page]
-                NUDGE[Nudge Popup]
-            end
-            
-            subgraph APP_LAYER["Application Layer"]
-                ENGINE[Engine<br/>Monitor Thread]
-                BRIDGE_SRV[Bridge Server<br/>HTTP Thread]
-            end
-            
-            subgraph DATA_LAYER["Data Layer"]
-                STORE[(Store<br/>SQLite)]
-            end
+    subgraph APP["PHI desktop app"]
+        subgraph PRES["Presentation"]
+            MW["MainWindow<br/>Today / Apps / Settings"]
+            POP["NudgePopup (card)"]
+            LOCK["LockScreen (full screen)"]
+            TRAY["Tray icon + menu"]
         end
-        
-        subgraph OS["Windows Operating System"]
-            WIN32[Win32 API]
-            REGISTRY[Registry]
-        end
-        
-        subgraph BROWSER["Web Browser"]
-            EXT[Browser Extension]
-            CONTENT[Content Scripts]
-            BG[Background Worker]
-        end
+        ENG["Engine"]
+        RDR["UrlReader<br/>worker thread"]
+        BRG["Bridge + BridgeServer<br/>HTTP thread"]
+        ST[("Store: usage, events, settings")]
     end
-    
-    subgraph FS["File System"]
-        DB[(phi.db)]
+    subgraph WIN["Windows"]
+        FG["Foreground window<br/>+ idle time"]
+        UIA["UI Automation"]
     end
-    
-    ENGINE -->|Qt Signals| UI_LAYER
-    ENGINE --> STORE
-    BRIDGE_SRV --> STORE
-    ENGINE --> BRIDGE_SRV
-    
-    UI_LAYER -->|User Actions| ENGINE
-    
-    ENGINE -->|GetForegroundWindow| WIN32
-    ENGINE -->|GetLastInputInfo| WIN32
-    DESKTOP_APP -->|Autostart| REGISTRY
-    
-    CONTENT --> BG
-    BG -->|POST /heartbeat| BRIDGE_SRV
-    BRIDGE_SRV -->|Close commands| BG
-    
-    STORE --> DB
+    BR["Browser"]
+    EXT["Extension (optional)"]
+
+    ENG -->|snapshot every tick| MW
+    ENG -->|snapshot| TRAY
+    ENG -->|nudge| POP
+    ENG -->|nudge| LOCK
+    POP -->|stop, more, pause, bypass| ENG
+    LOCK -->|stop, more| ENG
+    ENG --> ST
+    MW --> ST
+    ENG --> FG
+    ENG -->|set_target, poke| RDR
+    RDR --> UIA
+    UIA --> BR
+    EXT -.->|POST /v1/heartbeat| BRG
+    BRG -.->|close command| EXT
+    ENG --> BRG
 ```
 
-### Component Interaction
+### Threads and timers
 
-```mermaid
-flowchart LR
-    subgraph UI["UI Components"]
-        TODAY_P[TodayPage]
-        APPS_P[AppsPage]
-        SETTINGS_P[SettingsPage]
-        NUDGE_P[NudgePopup]
-    end
-    
-    subgraph CORE["Application Core"]
-        ENGINE[Engine]
-        BRIDGE[Bridge]
-        STORE[Store]
-        SETTINGS[Settings]
-    end
-    
-    subgraph PERSIST["Persistence"]
-        SQLITE[(SQLite)]
-        SETTINGS_TBL[(Settings Table)]
-    end
-    
-    TODAY_P <-->|snapshot signal| ENGINE
-    APPS_P <-->|query data| STORE
-    SETTINGS_P <-->|get/set| SETTINGS
-    NUDGE_P <-->|resolve action| ENGINE
-    
-    ENGINE -->|flush| STORE
-    ENGINE <-->|mailbox| BRIDGE
-    SETTINGS -->|save| SETTINGS_TBL
-    STORE -->|write| SQLITE
-```
-
-### Process Thread Model
-
-```mermaid
-sequenceDiagram
-    participant Main as Main Thread (Qt Event Loop)
-    participant Timer as QTimer
-    participant Engine as Engine
-    participant HTTP as HTTP Thread
-    participant Bridge as Bridge Mailbox
-    participant SQLite as SQLite
-    
-    Main->>Timer: Start 1000ms interval
-    loop Every Second
-        Timer->>Engine: _tick()
-        Engine->>Engine: Check foreground window
-        Engine->>Engine: Check idle time
-        Engine->>Bridge: fresh(9) - get extension data
-        Bridge-->>Engine: heartbeat or None
-        Engine->>Engine: Determine state
-        Engine->>Engine: Record time bucket
-        Engine->>Engine: Check limits
-        alt Limit Exceeded
-            Engine->>Main: nudge.emit()
-        end
-        Engine->>Main: snapshot.emit()
-    end
-    
-    par HTTP Server
-        HTTP->>Bridge: push(heartbeat)
-        Bridge->>Bridge: Store with timestamp
-        HTTP-->>HTTP: Response with commands
-    end
-    
-    par Periodic Flush
-        Engine->>SQLite: flush() every 10s
-    end
-```
+| Where | What | Cadence |
+|---|---|---|
+| Main thread | `Engine._tick`: decide state, record time, check limits | 500 ms |
+| Main thread | Title watcher: wake the reader when the browser title changes | 40 ms |
+| Main thread | Store flush | every 10 s |
+| `phi-urlreader` | Read the address bar of the focused browser | about 80 ms, plus on demand |
+| `phi-bridge` | HTTP server for the extension | event driven |
+| Main thread | Animations | shared 16 ms clock, only while something moves |
 
 ---
 
-## Data Flow
+## How detection works
 
-### Monitoring Loop Sequence
-
-```mermaid
-sequenceDiagram
-    participant E as Engine
-    participant W as WinAPI
-    participant B as Bridge
-    participant S as Store
-    participant U as UI
-    
-    loop Every 1 Second
-        E->>W: foreground()
-        W-->>E: {exe, pid}
-        E->>W: idle_seconds()
-        W-->>E: seconds
-        E->>B: fresh(9)
-        B-->>E: heartbeat or None
-        
-        alt State = Shorts
-            E->>E: _add(hour, "shorts", "youtube", dt)
-            E->>E: Check session limit
-            alt Limit exceeded
-                E->>U: nudge.emit(payload)
-            end
-        else State = Site
-            E->>E: _add(hour, "site", domain, dt)
-            E->>E: Check site limit
-        else State = App
-            E->>E: _add(hour, "app", exe, dt)
-        end
-        
-        E->>E: _add(hour, "total", "*", dt)
-        
-        alt Every 10 seconds
-            E->>S: flush()
-            S->>S: Write to SQLite
-        end
-        
-        E->>U: snapshot.emit(state)
-    end
-```
-
-### Browser Extension Communication
-
-```mermaid
-sequenceDiagram
-    participant Tab as Browser Tab
-    participant CS as Content Script
-    participant BG as Background Worker
-    participant HTTP as HTTP Bridge
-    participant E as Engine
-    
-    Tab->>CS: Page loaded
-    CS->>CS: Detect Shorts, count swipes
-    CS->>BG: sendMessage({host, shorts, swipes})
-    
-    loop Every 4 seconds
-        BG->>HTTP: POST /v1/heartbeat
-        Note over BG,HTTP: {tabId, host, shorts, swipes,<br/>audible, active, incognito}
-        HTTP->>HTTP: Validate X-PHI header
-        HTTP->>HTTP: Validate Origin
-        HTTP->>E: bridge.push(event)
-        HTTP-->>BG: {ok: true, commands: []}
-    end
-    
-    alt User clicks "Stop" on nudge
-        E->>E: resolve(payload, "stop")
-        E->>HTTP: queue_command({type: "close"})
-        BG->>HTTP: POST /v1/heartbeat
-        HTTP-->>BG: {ok: true, commands: [{type: "close", match: "shorts"}]}
-        BG->>BG: tabs.remove(shortsTabId)
-        BG->>Tab: Close tab
-    end
-```
-
-### Nudge Popup Flow
-
-```mermaid
-stateDiagram-v2
-    [*] --> Monitoring: App Started
-    Monitoring --> Paused: User pauses
-    Paused --> Monitoring: User resumes
-    
-    Monitoring --> Idle: No input > threshold
-    Idle --> Monitoring: Input detected
-    
-    Monitoring --> Shorts: YouTube Shorts detected
-    Monitoring --> Site: Watched site detected
-    Monitoring --> App: Desktop app in focus
-    
-    Shorts --> CheckLimit: Time recorded
-    Site --> CheckLimit: Time recorded
-    
-    CheckLimit --> Monitoring: Under limit
-    CheckLimit --> NudgeShown: Over limit
-    
-    NudgeShown --> Stop: User clicks Stop
-    NudgeShown --> More: User clicks More
-    NudgeShown --> Pause: User clicks Pause
-    NudgeShown --> Bypass: User clicks Bypass
-    NudgeShown --> Dismiss: User dismisses
-    
-    Stop --> Monitoring: Tab closed, celebration
-    More --> Monitoring: Limits extended
-    Pause --> Monitoring: Reminders paused
-    Bypass --> Monitoring: No nudges for N minutes
-    Dismiss --> Monitoring: Acknowledged
-```
-
-### UI Rendering Pipeline
+PHI trusts the live address bar first. The extension heartbeat (every 4 s) is only a fallback, so detection does not wait for it.
 
 ```mermaid
 flowchart TD
-    A[Engine._tick] --> B[snapshot.emit]
-    B --> C[UI receives signal]
-    C --> D[update_status]
-    D --> E[StatusChip.set_state]
-    
-    F[QTimer periodic] --> G[refresh]
-    G --> H[Store.day_totals]
-    H --> I[Update StatCards]
-    I --> J[Animate number count]
-    I --> K[Animate bar growth]
-    
-    G --> L[Store.hourly]
-    L --> M[Timeline.set_rows]
-    M --> N[Render 24-hour grid]
-    
-    G --> O[Store.by_name]
-    O --> P[Create TopRow widgets]
-    P --> Q[Fade-in animations]
-    
-    style A fill:#e1f5ff
-    style B fill:#e1f5ff
-    style F fill:#fff3e0
-    style G fill:#fff3e0
+    A["Tick: foreground window"] --> B{"Is it a browser?"}
+    B -->|No| APP["Count time for the app"]
+    B -->|Yes| C{"Fresh address-bar read<br/>for this window?"}
+    C -->|Yes| SRC["Use host + Shorts flag"]
+    C -->|No| D{"Extension heartbeat<br/>fresh and tab active?"}
+    D -->|Yes| SRC
+    D -->|No| APP
+    SRC --> P{"Private window?"}
+    P -->|Yes| APP
+    P -->|No| X{"Excluded site?"}
+    X -->|Yes| SKIP["Not recorded"]
+    X -->|No| H{"youtube.com/shorts/...?"}
+    H -->|Yes| SH["State: shorts<br/>count Shorts time"]
+    H -->|No| SITE["Count site time<br/>check watched-site limit"]
 ```
+
+Time is only counted while there was input in the last `idle_threshold_s` seconds, or while the tab is playing audio. Clock jumps and sleep/resume are not counted.
+
+Private windows are never read as a site: their time is counted only as time in the browser app, with no hostname.
+
+Every navigation and every Short swipe changes the browser's window title. PHI watches the title (it is never stored) and uses a change as a signal to re-read the address bar immediately.
+
+```mermaid
+sequenceDiagram
+    participant U as You
+    participant B as Browser
+    participant W as Title watcher (40 ms)
+    participant R as UrlReader thread
+    participant E as Engine
+    participant UI as UI
+
+    U->>B: Swipe to the next Short
+    B->>B: Window title changes
+    W->>R: poke()
+    R->>B: Read address bar (UI Automation)
+    R-->>E: version++ with host, shorts, swipes
+    E->>E: Evaluate immediately
+    E-->>UI: snapshot (status, mood, session time)
+```
+
+Reader status values land in the activity log: `ok`, `slow:<ms>`, `no-omnibox`, `error:<type>`, `unavailable`.
+
+Supported for address-bar reading: Chrome, Edge, Brave, Vivaldi, Opera. Firefox is tracked as an app but its pages are not read.
 
 ---
 
-## Database Design
+## The nudge
 
-### Entity Relationship Diagram
+When a limit is crossed, PHI shows either the **lock screen** (default) or a **card** (turn lockdown off in Settings).
+
+```mermaid
+stateDiagram-v2
+    [*] --> Watching
+    Watching --> Watching: Under every limit
+    Watching --> Nudging: Session, daily or site limit crossed
+    Nudging --> Closing: Stop
+    Nudging --> ExtraTime: More time (locked at first)
+    Nudging --> Silenced: Pause reminders
+    Nudging --> Silenced: Something important
+    Nudging --> Recheck: Card dismissed with X
+    Nudging --> Closing: Lock countdown reaches zero
+
+    Closing --> Watching: Tab closed, mascot celebrates
+    ExtraTime --> Watching: Limit raised, video resumes
+    Silenced --> Watching: Timer ends
+    Recheck --> Watching: Asks again after 20 s
+```
+
+### Lock screen
+
+- Covers every monitor, swallows mouse and keyboard, takes focus back if it loses it, and ignores Alt+F4.
+- Counts down (`lockdown_seconds`, longer each time PHI has to ask again) and then closes Shorts for you.
+- "More time" needs a long press, and the hold gets longer on repeats.
+- Buttons are disabled for the first two seconds so a stray click cannot dismiss it.
+
+### Card
+
+- Dims the screen, drops in with a bounce, plays an alarm, and shows a marching hazard stripe.
+- Shows live numbers: session clock, today's total, Shorts watched, nudge number.
+- "More time" is locked for a few seconds, and the lock grows with each repeat.
+
+### Pausing the video
+
+With `pause_video` on (the default), either nudge presses the media Play/Pause key as it appears, so the Short stops playing behind it. If you choose anything except Stop, PHI presses the key again half a second later so the video carries on.
+
+### How tabs get closed
+
+```mermaid
+sequenceDiagram
+    participant U as You
+    participant E as Engine
+    participant X as Extension
+    participant B as Browser
+
+    U->>E: Stop (or countdown ends)
+    alt Extension heartbeat is fresh
+        E->>X: close command on next heartbeat
+        X->>B: tabs.remove (only if still on the page)
+    else No extension
+        E->>B: Focus the browser window
+        Note over E,B: wait 900 ms, re-read the address bar
+        alt Still on the nudged page
+            E->>B: Ctrl+W
+        else Moved on
+            E-->>E: do nothing
+        end
+    end
+    E->>E: Reset session, 5 s grace, celebrate
+```
+
+The only keys PHI ever sends are Ctrl+W (after re-checking the page) and the media Play/Pause key (to pause the video behind the lock).
+
+---
+
+## Animation and performance
+
+The goal is motion that feels physical without costing anything while PHI sits in the tray.
+
+```mermaid
+graph LR
+    CLK["Shared frame clock<br/>starts with the first subscriber,<br/>stops with the last"]
+    CLK --> MAS["Mascot<br/>springs, hop physics, blink,<br/>glint, particles"]
+    CLK --> BTN["Buttons, toggles<br/>springs"]
+    CLK --> SIDE["Sidebar pill<br/>spring"]
+    CLK --> FX["Spark layer<br/>confetti, +1, bursts"]
+    CLK --> CARD["Stat card<br/>value pulse"]
+```
+
+What makes it cheap and smooth:
+
+- **One clock, and it sleeps.** `phi/ui/motion.py` runs a single 16 ms timer only while something is moving. When the main window is hidden, every animation unsubscribes and the timer stops completely; it starts again when the window is shown.
+- **Springs for feel.** The sidebar pill, toggle knob, button press, mascot squash, hair and antennae all run on damped springs, so they overshoot and settle instead of easing linearly.
+- **Cached pixel layers.** The mascot's skin, outline, hair and glasses are pre-rendered at a whole number of device pixels per cell, so edges stay crisp at any display scale. A frame only repaints when the quantised pose actually changed.
+- **Tween, don't replay.** Routine data refreshes slide values and bars to their new numbers. The intro animation only plays when you open a page or the window.
+- **Cheap page switches.** Pages switch instantly and animate their own contents in with a stagger. A full-page cross-fade re-rendered the whole page every frame, so it was removed.
+- **Rows update in place.** The Apps list and the Top apps panel reuse their rows and animate to new values instead of rebuilding.
+- **Fast writes.** SQLite runs in WAL mode with `synchronous=NORMAL`, so the periodic flush does not stall the UI thread on `fsync`. A power cut can lose the last moments of stats but cannot corrupt the file.
+
+Micro-animations: buttons squash and pop pixel sparks when they fire, toggles stretch as they slide and spark when switched on, stepper numbers roll up or down, a stat card pulses when its value rises, timeline cells show a tag on hover, and stopping Shorts triggers confetti and a floating `+1 STOPPED`.
+
+---
+
+## Data model
 
 ```mermaid
 erDiagram
     USAGE {
         TEXT day PK "YYYY-MM-DD"
-        INTEGER hour PK "0-23"
-        TEXT kind PK "total|site|app|shorts|swipes"
-        TEXT name PK "*|domain|exe|youtube"
-        REAL seconds "Accumulated time"
+        INTEGER hour PK "0 to 23"
+        TEXT kind PK "total, app, site, shorts, swipes"
+        TEXT name PK "star, exe, domain, youtube, shorts"
+        REAL seconds "accumulated"
     }
-    
     EVENTS {
-        INTEGER id PK "Auto-increment"
-        REAL ts "Unix timestamp"
-        TEXT day "YYYY-MM-DD"
-        TEXT kind "nudge|stop|more|pause|bypass"
-        TEXT detail "JSON payload"
+        INTEGER id PK "autoincrement"
+        REAL ts "unix time"
+        TEXT day "YYYY-MM-DD, indexed with kind"
+        TEXT kind "nudge, stop, more, pause, bypass, dismiss"
+        TEXT detail "what triggered it"
     }
-    
     SETTINGS {
-        TEXT key PK "Setting name"
-        TEXT value "JSON encoded value"
+        TEXT key PK
+        TEXT value "JSON"
     }
-    
-    USAGE ||--o{ EVENTS : "same day"
 ```
 
-### Table Specifications
+The tables are independent on purpose. `usage` and `events` only share the `day` column, and a day is the unit for retention.
 
-#### USAGE Table
+### Settings
 
-| Column | Type | Description | Example |
-|--------|------|-------------|---------|
-| `day` | TEXT | ISO date (YYYY-MM-DD) | `"2024-01-15"` |
-| `hour` | INTEGER | Hour of day (0-23) | `14` |
-| `kind` | TEXT | Category of usage | `"site"`, `"shorts"` |
-| `name` | TEXT | Specific identifier | `"youtube.com"` |
-| `seconds` | REAL | Accumulated time | `1842.5` |
+| Key | Default | Meaning |
+|---|---|---|
+| `reminders` | `true` | Show nudges at all |
+| `lockdown` | `true` | Full-screen lock instead of the small card |
+| `lockdown_seconds` | `10` | Countdown before PHI closes Shorts for you (grows on repeats) |
+| `pause_video` | `true` | Pause the video behind the lock |
+| `shorts_limit_min` | `20` | Continuous Shorts time before a nudge (`0` = nudge as soon as Shorts opens) |
+| `shorts_daily_min` | `60` | Shorts budget per day (`0` = off) |
+| `extend_min` | `5` | Length of "give me more time" |
+| `pause_min` | `60` | Length of "pause reminders" |
+| `bypass_min` | `30` | Length of "I'm using it for something important" |
+| `idle_threshold_s` | `120` | No input for this long counts as away |
+| `track_apps` | `true` | Record desktop apps, not just sites |
+| `autostart` | `true` | Start with Windows (per-user Run key, no admin) |
+| `retention_days` | `90` | Older days are deleted automatically |
+| `watched_sites` | Instagram and Reddit on (15 min), TikTok and X off | Per-site daily limits |
+| `excluded_sites` | none | Sites that are never recorded |
 
-**Primary Key**: `(day, hour, kind, name)`
+Environment variables: `PHI_DATA_DIR` moves the data folder, and `PHI_NO_AUTOSTART` stops PHI from writing the autostart entry.
 
-**Kind Values**:
-- `total` / `*` — Total active time
-- `site` / domain — Time on specific website
-- `app` / exe — Time in desktop application
-- `shorts` / `youtube` — YouTube Shorts time
-- `swipes` / `shorts` — Swipe count
+---
 
-#### EVENTS Table
+## Project structure
 
-| Column | Type | Description |
-|--------|------|-------------|
-| `id` | INTEGER | Auto-increment ID |
-| `ts` | REAL | Unix timestamp |
-| `day` | TEXT | ISO date |
-| `kind` | TEXT | Event type |
-| `detail` | TEXT | JSON payload |
-
-**Event Types**: `nudge`, `stop`, `more`, `pause`, `bypass`, `dismiss`
-
-### Query Patterns
-
-```sql
--- Today's totals by kind
-SELECT kind, name, SUM(seconds)
-FROM usage
-WHERE day = DATE('now')
-GROUP BY kind, name
-ORDER BY SUM(seconds) DESC;
-
--- Hourly breakdown for a site
-SELECT hour, SUM(seconds)
-FROM usage
-WHERE day = DATE('now')
-  AND kind = 'site'
-  AND name = 'youtube.com'
-GROUP BY hour;
-
--- 7-day trend for Shorts
-SELECT day, SUM(seconds)
-FROM usage
-WHERE day >= DATE('now', '-6 days')
-  AND kind = 'shorts'
-GROUP BY day;
-
--- Nudge events today
-SELECT COUNT(*)
-FROM events
-WHERE day = DATE('now')
-  AND kind = 'nudge';
+```
+PHI/
+├── phi/
+│   ├── __main__.py        python -m phi
+│   ├── app.py             wiring: store, engine, tray, windows; single-instance lock
+│   ├── engine.py          the 500 ms loop, limits, nudges, closing tabs
+│   ├── urlreader.py       address-bar reader (UI Automation, worker thread)
+│   ├── server.py          localhost bridge for the extension
+│   ├── db.py              SQLite store and settings
+│   ├── winapi.py          foreground window, idle time, focus, Ctrl+W, media key
+│   ├── autostart.py       per-user Run key
+│   ├── utils.py           host normalisation, labels, time formatting
+│   └── ui/
+│       ├── main_window.py frameless window, spring sidebar, title bar
+│       ├── pages.py       Today, Apps and Sites, Settings
+│       ├── popup.py       the nudge card and its controller
+│       ├── lockscreen.py  full-screen lockdown
+│       ├── mascot.py      the nerd: sprite layers, moods, ring, wordmark, icons
+│       ├── motion.py      frame clock, springs, pixel sparks
+│       ├── widgets.py     buttons, toggles, steppers, charts, cards
+│       └── theme.py       colours and fonts
+├── extension/             Manifest V3 companion (optional)
+├── tools/make_icons.py    renders phi.ico and the extension icons from the mascot
+├── docs/                  images used by this README
+├── build.ps1              PyInstaller + Inno Setup build
+├── installer.iss          installer definition
+├── run_phi.pyw            double-click launcher (no console)
+└── requirements.txt
 ```
 
 ---
 
-## Project Structure
+## Install and run
 
-```
-PHI_FOCUS/
-├── phi/                          # Main Python package
-│   ├── __init__.py              # Package metadata
-│   ├── __main__.py              # Entry point
-│   ├── app.py                   # Application setup
-│   ├── engine.py                # Monitoring engine
-│   ├── db.py                    # SQLite store
-│   ├── server.py                # HTTP bridge
-│   ├── winapi.py                # Windows API
-│   ├── utils.py                 # Helpers
-│   ├── autostart.py             # Registry config
-│   └── ui/                      # UI components
-│       ├── theme.py             # Design tokens
-│       ├── widgets.py           # Custom widgets
-│       ├── pages.py             # Main pages
-│       └── mascot.py            # Mascot animation
-├── extension/                   # Browser extension (TODO)
-├── tools/                       # Development tools
-├── build/                       # Built executable
-├── .venv/                       # Virtual environment
-└── requirements.txt             # Dependencies
-```
-
-### Module Responsibilities
-
-| Module | Responsibility |
-|--------|---------------|
-| `engine.py` | Monitoring loop, state machine, limit checking, nudge emission |
-| `db.py` | SQLite operations, settings persistence, data retention |
-| `server.py` | HTTP server, origin validation, command queuing |
-| `winapi.py` | Foreground window detection, idle time tracking |
-| `utils.py` | Domain normalization, time formatting, name prettification |
-| `ui/pages.py` | Today, Apps, Settings pages with data binding |
-| `ui/widgets.py` | Custom Qt widgets with animations |
-| `ui/theme.py` | Colors, fonts, global styles |
-
----
-
-## Installation & Setup
-
-### Prerequisites
-
-| Requirement | Version | Notes |
-|-------------|---------|-------|
-| **Windows** | 10/11 | Required for Win32 API |
-| **Python** | 3.11+ | For async features |
-| **pip** | Latest | Package manager |
-
-### Quick Start
+You need Windows 10 or 11 and Python 3.12.
 
 ```powershell
-# Clone the repository
-git clone https://github.com/yourusername/PHI_FOCUS.git
-cd PHI_FOCUS
-
-# Create virtual environment
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-
-# Install dependencies
+git clone https://github.com/Abubakkar-Khan/PHI.git
+cd PHI
+py -3.12 -m venv .venv312
+.\.venv312\Scripts\Activate.ps1
 pip install -r requirements.txt
 
-# Run the application
-python -m phi
+python -m phi                 # window + tray
+python -m phi --background    # tray only
 ```
 
-### Run Built Executable
+`run_phi.pyw` starts the same app without a console window.
 
-If you have the built executable:
+### Troubleshooting
+
+- **Nothing changed after an update.** Only one PHI can run at a time (a lock file in your temp folder). A copy that is still in the tray keeps running its old code. Quit it from the tray menu, then start PHI again.
+- **Shorts is not detected.** Open `%APPDATA%\PHI\phi.log` and look for `reader:` lines. `no-omnibox` means the address bar was not found (full-screen mode hides it), and `unavailable` means the `uiautomation` package is missing. Firefox pages are not read.
+- **Where is my data?** `%APPDATA%\PHI`. Settings has an "Open folder" button.
+
+### Developing without a display
 
 ```powershell
-.\build\PHI\PHI.exe
+$env:QT_QPA_PLATFORM = "offscreen"
 ```
 
-### Configuration
-
-**Settings Location**: `%APPDATA%\PHI\phi.db`
-
-**Default Settings**:
-
-| Setting | Default | Description |
-|---------|---------|-------------|
-| `shorts_limit_min` | 20 | Minutes of Shorts before nudge |
-| `shorts_daily_min` | 60 | Total daily Shorts budget |
-| `extend_min` | 5 | "Give me more" duration |
-| `pause_min` | 60 | Pause reminders duration |
-| `bypass_min` | 30 | Bypass mode duration |
-| `idle_threshold_s` | 120 | Idle detection threshold |
-| `track_apps` | true | Track desktop applications |
-| `autostart` | true | Start with Windows |
-| `retention_days` | 90 | Data retention period |
+Widgets can be built, stepped and rendered with `grab()` in this mode. Fonts may differ from a normal run.
 
 ---
 
-## Browser Extension
+## Build the installer
 
-### Extension Architecture
-
-```mermaid
-graph TB
-    subgraph EXT["Browser Extension"]
-        MANIFEST[manifest.json<br/>Manifest V3]
-        BG[Background<br/>Service Worker]
-        CS[Content Scripts]
-        POPUP[Popup UI]
-    end
-    
-    subgraph PAGES["Web Pages"]
-        YT[YouTube]
-        OTHER[Other Sites]
-    end
-    
-    subgraph APP["Desktop App"]
-        HTTP[HTTP Server<br/>127.0.0.1:47615]
-    end
-    
-    YT --> CS
-    OTHER --> CS
-    CS -->|sendMessage| BG
-    BG -->|POST /heartbeat| HTTP
-    HTTP -->|commands| BG
-    BG -->|tabs.remove| YT
-    
-    MANIFEST --> BG
-    MANIFEST --> CS
+```powershell
+.\.venv312\Scripts\python.exe -m pip install pyinstaller
+.\build.ps1
 ```
 
-### API Protocol
+The script regenerates the icons from the mascot, builds `dist\PHI\PHI.exe` with PyInstaller, and then builds `installer_output\PHI-Setup.exe` if Inno Setup 6 is installed. It downloads the Visual C++ redistributable into `redist\` on first run. Build output is git-ignored.
 
-**POST /v1/heartbeat**
+---
 
-```json
-// Request
-{
-  "tabId": 123,
-  "host": "youtube.com",
-  "shorts": true,
-  "swipes": 47,
-  "audible": true,
-  "active": true,
-  "incognito": false
-}
+## Browser extension
 
-// Response
-{
-  "ok": true,
-  "commands": [
-    {"type": "close", "match": "shorts"}
-  ]
-}
-```
+The extension is optional. PHI reads the address bar itself, so the extension only adds a fallback and a clean way to close tabs.
 
-**GET /v1/ping**
+**Install (Chrome, Edge, Brave):** open `chrome://extensions`, turn on Developer mode, choose Load unpacked, and select the `extension/` folder.
 
-```json
-// Response
-{
-  "app": "phi",
-  "v": 1
-}
-```
+- **Permissions:** `tabs` and `alarms`, and host access to `http://127.0.0.1:47615/*` only.
+- **What it sends:** a hostname and a few booleans every 4 s. Never URLs, titles or page content, and nothing from private windows.
+- **What it does:** counts distinct Shorts viewed in a tab (from the URL path), and closes the active tab when PHI sends a `close` command and the tab is still on the nudged page.
+- **Status:** a `!` badge appears when the PHI app is not running.
 
-### Security Model
+### Local API
 
 ```mermaid
 flowchart TD
-    A[Incoming Request] --> B{Origin valid?}
-    B -->|No| C[403 Forbidden]
-    B -->|Yes| D{X-PHI header?}
+    A["Incoming request"] --> B{"Origin is chrome-extension:// or moz-extension://?"}
+    B -->|No| C["403"]
+    B -->|Yes| D{"Header X-PHI: 1?"}
     D -->|No| C
-    D -->|Yes| E{Body size < 4KB?}
-    E -->|No| F[413 Too Large]
-    E -->|Yes| G{Valid JSON?}
-    G -->|No| H[400 Bad Request]
-    G -->|Yes| I[Process heartbeat]
-    I --> J[Return 200 OK]
-    
-    style C fill:#ffcccc
-    style F fill:#ffcccc
-    style H fill:#ffcccc
-    style J fill:#ccffcc
+    D -->|Yes| E{"Body 1 to 4096 bytes?"}
+    E -->|No| F["413"]
+    E -->|Yes| G{"Valid JSON object?"}
+    G -->|No| H["400"]
+    G -->|Yes| I["Store latest heartbeat,<br/>reply with pending commands"]
 ```
 
-**Security Layers**:
-1. **Network Isolation** — Server binds only to 127.0.0.1
-2. **Origin Validation** — Must be chrome-extension:// or moz-extension://
-3. **Header Validation** — Must include `X-PHI: 1`
-4. **Payload Validation** — Max 4KB, type checking
-5. **Data Minimization** — Only hostnames and booleans, never URLs or content
+`POST /v1/heartbeat` takes `{tabId, host, shorts, swipes, audible, active, incognito}` and replies `{"ok": true, "commands": [{"type": "close", "match": "shorts"}]}`. `GET /v1/ping` replies `{"app": "phi", "v": 1}`. The server binds to `127.0.0.1` only.
 
 ---
 
-## Privacy & Security
+## Privacy and security
 
-### Data Collection Policy
+**PHI stores**
 
-```mermaid
-graph LR
-    subgraph COLLECTED["✅ Collected"]
-        A[App names<br/>code.exe]
-        B[Site hostnames<br/>youtube.com]
-        C[Time durations<br/>1842 seconds]
-        D[Settings]
-        E[Interaction events]
-    end
-    
-    subgraph NOT_COLLECTED["❌ NOT Collected"]
-        F[Keystrokes]
-        G[Screenshots]
-        H[Full URLs]
-        I[Page content]
-        J[Passwords]
-        K[Personal info]
-    end
-```
+- App executable names (for example `code.exe`) and site hostnames (for example `youtube.com`).
+- Seconds per hour, per day.
+- Events: when a nudge appeared and what you chose.
+- Your settings.
+- An activity log, `%APPDATA%\PHI\phi.log` (rotated at about 200 KB), with timestamps, state changes such as `state active / Brave`, nudges, and reader status. It holds app and site labels, never URLs.
 
-### What PHI Collects
+**PHI never stores or sends**
 
-- Application executable names (e.g., `code.exe`, `chrome.exe`)
-- Website hostnames only (e.g., `youtube.com`, not full URLs)
-- Time durations in seconds
-- User settings and preferences
-- Interaction events (nudge shown, action taken)
+- Keystrokes, mouse activity, screenshots or screen recordings.
+- Full URLs, page paths, page titles or page content.
+- The sites you visit in private or incognito windows. Those windows count only as time in the browser app.
+- Anything over the network. The only socket is the local one for the extension.
 
-### What PHI Does NOT Collect
+**How the address-bar reader stays private.** It reads the address bar in memory, keeps the hostname, a Shorts flag and a private-window flag, and discards the rest. The window title is used only as a "something changed" signal and is never stored or logged.
 
-- ❌ Keystrokes or keypresses
-- ❌ Mouse movements or clicks
-- ❌ Screenshots or screen recordings
-- ❌ Full URLs, page paths, or query strings
-- ❌ Page titles or content
-- ❌ Form data or input values
-- ❌ Passwords or credentials
-- ❌ Authentication tokens or cookies
-- ❌ Any personally identifiable information
+**Keys PHI sends.** Ctrl+W (only after re-checking that the browser is still on the nudged page) and the media Play/Pause key (to pause the video behind the lock). Nothing else.
 
-### Security Guarantees
-
-| Guarantee | Implementation |
-|-----------|---------------|
-| **No Network Transmission** | All data stays on your computer |
-| **No User Accounts** | No login, passwords, or tokens |
-| **No Telemetry** | No usage stats or crash reports |
-| **No Third-Party Services** | No analytics, CDNs, or external APIs |
-| **Localhost-Only Comm** | Extension only talks to 127.0.0.1 |
-| **No Admin Rights** | Installs and runs in user space |
+**Other guarantees.** No telemetry, no account, no admin rights, and autostart uses the per-user Run key. "Delete all data" in Settings wipes the usage and events tables.
 
 ---
 
-## Development Roadmap
+## Status
 
-### Current Status
+| Area | State |
+|---|---|
+| Monitoring engine, limits, idle handling | Implemented |
+| Address-bar detection (Chromium) | Implemented, extension is a fallback |
+| Browser extension (MV3) | Implemented |
+| Today, Apps and Sites, Settings pages | Implemented |
+| Nudge card and full-screen lockdown | Implemented |
+| Tray icon and menu | Implemented |
+| Nerd mascot with five moods and micro-animations | Implemented |
+| Installer build (PyInstaller + Inno Setup) | Scripts in the repo |
 
-```mermaid
-pie title Development Progress (70% Complete)
-    "Completed" : 70
-    "In Progress" : 10
-    "Planned" : 20
-```
+Known gaps:
 
-### Completed Features ✅
-
-- [x] Core monitoring engine with QTimer loop
-- [x] SQLite database with WAL journaling
-- [x] Windows integration (foreground, idle, autostart)
-- [x] HTTP bridge server for extension
-- [x] Custom UI widget library
-- [x] Three main pages (Today, Apps, Settings)
-- [x] Theme and design system
-
-### In Progress 🚧
-
-- [ ] Browser extension (Chrome/Firefox)
-- [ ] System tray icon
-- [ ] Nudge popup window
-- [ ] Main entry point refinement
-
-### Planned 📋
-
-**Phase 2**
-- Mascot sprite animations
-- Sound notifications
-- Focus mode (block sites)
-
-**Phase 3**
-- Weekly reports
-- Data export (JSON/CSV)
-- Multiple mascot designs
-- Custom themes
-
-**Phase 4**
-- macOS support
-- Linux support
-- Installer distribution
+- Firefox pages are not read by the address-bar reader.
+- Windows only (Win32 and UI Automation).
+- The repository has no automated tests yet.
+- The repository has no license file yet.
 
 ---
 
 ## Contributing
 
-We welcome contributions!
-
-### Code Style
-
-- **Python**: Follow PEP 8
-- **Type Hints**: Use type annotations
-- **Docstrings**: Document all public methods
-- **UI Components**: Match existing patterns
-
-### Development Setup
-
-```powershell
-git clone https://github.com/yourusername/PHI_FOCUS.git
-cd PHI_FOCUS
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-python -m phi
-```
-
-### Privacy Requirements
-
-**IMPORTANT**: Never add:
-- Telemetry or analytics
-- Network calls to external servers
-- Data collection beyond specified policy
-- Any feature that compromises user privacy
+- Follow PEP 8 and match the existing widget style in `phi/ui/widgets.py`.
+- Keep privacy intact: no telemetry, no outbound network calls, no storing URLs, titles or page content.
+- Put animation work on the shared clock in `phi/ui/motion.py` so it sleeps when idle.
+- If you change the mascot, regenerate the icons with `python tools/make_icons.py`.
 
 ---
 
 ## License
 
-MIT License
-
-Copyright (c) 2024 PHI Focus Contributors
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+No license has been chosen yet. Until one is added, all rights are reserved by the author.
 
 ---
 
 <p align="center">
-  <b>PHI Focus</b><br>
+  <b>PHI</b><br>
   <i>Stay intentional. Your time matters.</i>
 </p>

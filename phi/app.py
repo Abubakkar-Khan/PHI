@@ -18,7 +18,9 @@ from .ui import theme as T
 from .ui import mascot as mascot_module
 from .ui.main_window import MainWindow
 from .ui.mascot import ghost_icon
+from .reminders import ReminderScheduler
 from .ui.pages import Ctx
+from .ui.reminderscreen import ReminderController
 from .ui.popup import PopupController
 
 
@@ -129,6 +131,10 @@ def main(argv: list[str] | None = None) -> int:
     ctx = Ctx(store, cfg, engine)
     window = MainWindow(ctx)
     popups = PopupController(engine, cfg)
+    scheduler = ReminderScheduler(cfg, engine)
+    ctx.scheduler = scheduler
+    reminders = ReminderController(scheduler, cfg)
+    scheduler.start()
 
     def on_theme_change(key: str) -> None:
         """Light / dark / custom: swap the tokens, then rebuild the window. Popups pick it up when they appear."""
