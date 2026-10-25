@@ -51,7 +51,8 @@ class Tray:
 
     @staticmethod
     def _make_icons() -> dict:
-        return {m: ghost_icon(m) for m in ("monitoring", "idle", "alert", "sleep")}
+        face = ghost_icon()          # one face for every state: the same nerd as the app and exe icons
+        return {m: face for m in ("monitoring", "idle", "alert", "sleep")}
 
     def refresh_icons(self) -> None:
         self.icons = self._make_icons()
@@ -112,7 +113,7 @@ def main(argv: list[str] | None = None) -> int:
     app = QApplication(argv)
     app.setApplicationName(APP_NAME)
     app.setQuitOnLastWindowClosed(False)
-    app.setWindowIcon(ghost_icon("idle"))
+    app.setWindowIcon(ghost_icon())
 
     lock = QLockFile(os.path.join(tempfile.gettempdir(), "phi-app.lock"))
     lock.setStaleLockTime(0)

@@ -821,15 +821,23 @@ class WordMark(QWidget):
                     p.drawEllipse(QPointF((gi * 6 + x) * step + step / 2, y * step + step / 2 + 1), self._dot * 0.8, self._dot * 0.8)
 
 
-def ghost_icon(mood: str = "idle", size: int = 64) -> QIcon:
+def ghost_icon(mood: str = "monitoring", size: int = 256) -> QIcon:
     """Static render of the head for the tray, the window and the extension icons."""
     px, pad = 8, 2                                      # pad: room for the lifted hair and the plus's arms
     sprite = QPixmap((SW + 2 * pad) * px, (SH + 2 * pad) * px)
     sprite.fill(Qt.GlobalColor.transparent)
-    p = QPainter(sprite)
-    p.translate((pad - OX) * px, (pad - OY) * px)
-    paint_pose(p, replace(Pose.static(mood), shadow=0.0), px, 1.0, T.PAPER)
-    p.end()
+    # The icon always uses the light palette, so the tray, taskbar and exe show the same face in every theme.
+    saved = {k: getattr(T, k) for k in T.LIGHT}
+    T.__dict__.update(T.LIGHT)
+    _layers.cache_clear()
+    try:
+        p = QPainter(sprite)
+        p.translate((pad - OX) * px, (pad - OY) * px)
+        paint_pose(p, replace(Pose.static(mood), shadow=0.0), px, 1.0, T.PAPER)
+        p.end()
+    finally:
+        T.__dict__.update(saved)
+        _layers.cache_clear()
     scaled = sprite.scaled(size, size, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
     out = QPixmap(size, size)
     out.fill(Qt.GlobalColor.transparent)

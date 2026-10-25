@@ -257,7 +257,7 @@ class MainWindow(QWidget):
         super().__init__()
         self.ctx = ctx
         self.setWindowTitle("PHI")
-        self.setWindowIcon(ghost_icon("idle"))
+        self.setWindowIcon(ghost_icon())
         self.setWindowFlag(Qt.WindowType.FramelessWindowHint, True)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setMinimumSize(900, 640)
