@@ -26,16 +26,18 @@
 4. [Architecture](#architecture)
 5. [How detection works](#how-detection-works)
 6. [The nudge](#the-nudge)
-7. [Animation and performance](#animation-and-performance)
-8. [Data model](#data-model)
-9. [Project structure](#project-structure)
-10. [Install and run](#install-and-run)
-11. [Build the installer](#build-the-installer)
-12. [Browser extension](#browser-extension)
-13. [Privacy and security](#privacy-and-security)
-14. [Status](#status)
-15. [Contributing](#contributing)
-16. [License](#license)
+7. [Timers and alarms](#timers-and-alarms)
+8. [Themes](#themes)
+9. [Animation and performance](#animation-and-performance)
+10. [Data model](#data-model)
+11. [Project structure](#project-structure)
+12. [Install and run](#install-and-run)
+13. [Build the installer](#build-the-installer)
+14. [Browser extension](#browser-extension)
+15. [Privacy and security](#privacy-and-security)
+16. [Status](#status)
+17. [Contributing](#contributing)
+18. [License](#license)
 
 ---
 
@@ -47,6 +49,8 @@ PHI sits in your system tray and watches which app or site is in focus, counting
 - **Detects Shorts** by reading the browser's address bar. The browser extension is optional.
 - **Interrupts you** with a lock screen or a card, a siren, a countdown, and friction that grows each time it has to ask again.
 - **Closes Shorts for you** through the extension, or with Ctrl+W when no extension is connected.
+- **Reminds you to take breaks** with timers and alarms ("Take a break" every 30 minutes, or a message at 13:00) shown as a full-screen reminder with your own text.
+- **Looks the way you like**: light, dark, or a custom theme from three colours, applied to the app, the lock screen and the reminders.
 - **Keeps everything local** in a SQLite file under `%APPDATA%\PHI`.
 
 Design rules: deterministic limits you control (no AI deciding anything), no keystroke logging, no screenshots, no page content.
@@ -160,6 +164,7 @@ graph TB
 | Main thread | `Engine._tick`: decide state, record time, check limits | 500 ms |
 | Main thread | Title watcher: wake the reader when the browser title changes | 40 ms |
 | Main thread | Store flush | every 10 s |
+| Main thread | `ReminderScheduler`: timers and alarms | 1 s |
 | `phi-urlreader` | Read the address bar of the focused browser | about 80 ms, plus on demand |
 | `phi-bridge` | HTTP server for the extension | event driven |
 | Main thread | Animations | shared 16 ms clock, only while something moves |
@@ -189,6 +194,8 @@ flowchart TD
 ```
 
 Time is only counted while there was input in the last `idle_threshold_s` seconds, or while the tab is playing audio. Clock jumps and sleep/resume are not counted.
+
+**Sessions.** A Shorts session is continuous time on Shorts. Leaving Shorts for more than 4 seconds ends it, so closing Shorts and reopening it is a fresh check and triggers again straight away (with the session limit at `0`, as soon as it opens). "More time" only covers the session you are in.
 
 Private windows are never read as a site: their time is counted only as time in the browser app, with no hostname.
 
@@ -246,6 +253,7 @@ stateDiagram-v2
 - Counts down (`lockdown_seconds`, longer each time PHI has to ask again) and then closes Shorts for you.
 - "More time" needs a long press, and the hold gets longer on repeats.
 - Buttons are disabled for the first two seconds so a stray click cannot dismiss it.
+- Follows your theme (light, dark or custom). It has no X button and no "pause reminders" option; those exist only on the card and in the tray menu.
 
 ### Card
 
@@ -283,6 +291,48 @@ sequenceDiagram
 ```
 
 The only keys PHI ever sends are Ctrl+W (after re-checking the page) and the media Play/Pause key (to pause the video behind the lock).
+
+---
+
+## Timers and alarms
+
+Set them up in **Settings → Timers & alarms**. Each one has:
+
+| Option | Meaning |
+|---|---|
+| On/off toggle | Disable it without deleting it |
+| Message | Any text, for example "Take a break" or "Drink water" (long text wraps to fit) |
+| Schedule | **Every** N minutes (1 to 720), or **At** a time of day (`HH:MM`) |
+| Sound | Play a soft two-tone chime |
+| test | Show it now without touching its schedule |
+| remove | Delete it |
+
+A reminder appears as a **full-screen screen in your theme** on every monitor, with your message, the time, and **Done** and **Snooze** buttons (Esc also means Done). Snooze length is a setting (`reminder_snooze_min`, default 5).
+
+Rules:
+
+- **Interval timers** count wall-clock time, and restart when you have been away from the keyboard for 5 minutes or more, because you already took a break.
+- **Daily alarms** fire once at their time. A missed alarm (PHI was closed) is skipped, not replayed.
+- **One at a time.** Only one reminder is on screen at once, and none appears while a Shorts lock is open; it waits until the screen is free.
+- A starter timer, "Take a break" every 30 minutes, is included but switched **off**.
+
+```mermaid
+flowchart LR
+    S["ReminderScheduler<br/>1 s tick"] -->|"due"| C["ReminderController"]
+    C --> R["ReminderScreen<br/>full screen, themed"]
+    R -->|"Done"| S2["Reschedule from now"]
+    R -->|"Snooze"| S3["Fire again after N min"]
+```
+
+---
+
+## Themes
+
+**Settings → Appearance** switches between **Light**, **Dark** and **Custom**. The change is instant, with no restart, and the same palette is used by the main window, the Shorts lock, the card and the reminders.
+
+For **Custom** you pick three colours: **Background**, **Text** and **Accent**. PHI derives everything else (cards, borders, chart cells, muted text) from those three, so any combination stays readable as long as text contrasts with the background.
+
+Technically, `phi/ui/theme.py` holds the colour tokens (`BG`, `SURFACE`, `PAPER`, `INK`, `GRAY`, `RED`, `LINE`, `SOFT`, `CELL`, `BAR`, `EDGE`). `theme.apply()` swaps them, and the main window rebuilds itself on the same page. Windows that appear later (lock, card, reminders) read the tokens when they are built. Code should read colours as `T.INK` at paint or build time, never store them in a default argument.
 
 ---
 
@@ -359,6 +409,10 @@ The tables are independent on purpose. `usage` and `events` only share the `day`
 | `retention_days` | `90` | Older days are deleted automatically |
 | `watched_sites` | Instagram and Reddit on (15 min), TikTok and X off | Per-site daily limits |
 | `excluded_sites` | none | Sites that are never recorded |
+| `theme_mode` | `light` | `light`, `dark` or `custom` |
+| `theme_bg`, `theme_text`, `theme_accent` | `#F0EFEB`, `#171717`, `#E53935` | The three colours used by the custom theme |
+| `reminder_items` | one "Take a break" every 30 min, off | List of timers and alarms: `id`, `message`, `mode` (`interval` or `daily`), `every_min`, `time`, `enabled`, `sound` |
+| `reminder_snooze_min` | `5` | Length of Snooze on a reminder |
 
 Environment variables: `PHI_DATA_DIR` moves the data folder, and `PHI_NO_AUTOSTART` stops PHI from writing the autostart entry.
 
@@ -372,6 +426,7 @@ PHI/
 │   ├── __main__.py        python -m phi
 │   ├── app.py             wiring: store, engine, tray, windows; single-instance lock
 │   ├── engine.py          the 500 ms loop, limits, nudges, closing tabs
+│   ├── reminders.py       timers and alarms scheduler
 │   ├── urlreader.py       address-bar reader (UI Automation, worker thread)
 │   ├── server.py          localhost bridge for the extension
 │   ├── db.py              SQLite store and settings
@@ -383,10 +438,11 @@ PHI/
 │       ├── pages.py       Today, Apps and Sites, Settings
 │       ├── popup.py       the nudge card and its controller
 │       ├── lockscreen.py  full-screen lockdown
+│       ├── reminderscreen.py  full-screen timer/alarm and its controller
 │       ├── mascot.py      the nerd: sprite layers, moods, ring, wordmark, icons
 │       ├── motion.py      frame clock, springs, pixel sparks
 │       ├── widgets.py     buttons, toggles, steppers, charts, cards
-│       └── theme.py       colours and fonts
+│       └── theme.py       light/dark/custom palettes, fonts, global stylesheet
 ├── extension/             Manifest V3 companion (optional)
 ├── tools/make_icons.py    renders phi.ico and the extension icons from the mascot
 ├── docs/                  images used by this README
@@ -419,7 +475,9 @@ python -m phi --background    # tray only
 
 - **Nothing changed after an update.** Only one PHI can run at a time (a lock file in your temp folder). A copy that is still in the tray keeps running its old code. Quit it from the tray menu, then start PHI again.
 - **Shorts is not detected.** Open `%APPDATA%\PHI\phi.log` and look for `reader:` lines. `no-omnibox` means the address bar was not found (full-screen mode hides it), and `unavailable` means the `uiautomation` package is missing. Firefox pages are not read.
-- **Where is my data?** `%APPDATA%\PHI`. Settings has an "Open folder" button.
+- **Where is my data?** `%APPDATA%\PHI` (database `phi.db` and the log `phi.log`). To start fresh, quit PHI and delete that folder.
+- **The popup does not appear.** Check that "Reminders" is on and that "Shorts session limit" is what you expect (`0` = right away). An earlier "More time" only covers the session you were in.
+- **A reminder never shows.** Timers are off until you switch their toggle on in Settings. Use **test** on the row to preview it.
 
 ### Developing without a display
 
@@ -493,7 +551,7 @@ flowchart TD
 
 **Keys PHI sends.** Ctrl+W (only after re-checking that the browser is still on the nudged page) and the media Play/Pause key (to pause the video behind the lock). Nothing else.
 
-**Other guarantees.** No telemetry, no account, no admin rights, and autostart uses the per-user Run key. "Delete all data" in Settings wipes the usage and events tables.
+**Other guarantees.** No telemetry, no account, no admin rights, and autostart uses the per-user Run key. Old days are deleted automatically after `retention_days`, and quitting PHI and deleting `%APPDATA%\PHI` removes everything it has stored.
 
 ---
 
@@ -507,6 +565,8 @@ flowchart TD
 | Today, Apps and Sites, Settings pages | Implemented |
 | Nudge card and full-screen lockdown | Implemented |
 | Tray icon and menu | Implemented |
+| Timers and alarms (interval or daily, full-screen) | Implemented |
+| Light, dark and custom themes | Implemented |
 | Nerd mascot with five moods and micro-animations | Implemented |
 | Installer build (PyInstaller + Inno Setup) | Scripts in the repo |
 
