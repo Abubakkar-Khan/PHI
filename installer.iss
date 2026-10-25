@@ -30,7 +30,7 @@ Source: "redist\vc_redist.x64.exe"; DestDir: "{tmp}"; Flags: deleteafterinstall
 Source: "extension\*"; DestDir: "{app}\extension"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{group}\PHI"; Filename: "{app}\PHI.exe"
+Name: "{group}\PHI"; Filename: "{app}\PHI.exe"; IconFilename: "{app}\PHI.exe"; AppUserModelID: "PHI.Companion"
 Name: "{group}\PHI browser extension folder"; Filename: "{app}\extension"
 Name: "{autodesktop}\PHI"; Filename: "{app}\PHI.exe"; Tasks: desktopicon
 

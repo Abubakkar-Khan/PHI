@@ -101,6 +101,14 @@ def main(argv: list[str] | None = None) -> int:
             fh.write(msg)
         return 0
 
+    if sys.platform == "win32":
+        # Own taskbar identity: without this, running from Python groups PHI under the Python icon.
+        try:
+            import ctypes
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("PHI.Companion")
+        except Exception:
+            pass
+
     app = QApplication(argv)
     app.setApplicationName(APP_NAME)
     app.setQuitOnLastWindowClosed(False)

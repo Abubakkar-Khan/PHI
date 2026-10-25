@@ -1,19 +1,46 @@
-"""Render the extension icons from the mascot sprite. Run: python tools/make_icons.py"""
+"""Render the extension icons and a multi-size phi.ico from the mascot. Run: python tools/make_icons.py"""
 import os
+import struct
 import sys
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, ROOT)
 
-from PySide6.QtGui import QGuiApplication  # noqa: E402
+from PySide6.QtCore import QBuffer, QByteArray, QIODevice  # noqa: E402
+from PySide6.QtWidgets import QApplication  # noqa: E402
 
 from phi.ui.mascot import ghost_icon  # noqa: E402
 
-app = QGuiApplication([])
-out = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "extension", "icons")
-os.makedirs(out, exist_ok=True)
-icon = ghost_icon("idle", 256)
-for size in (16, 32, 48, 128):
-    icon.pixmap(size, size).save(os.path.join(out, f"{size}.png"))
+app = QApplication([])
+icon = ghost_icon("monitoring", 512)
 
-icon.pixmap(256, 256).save(os.path.join(os.path.dirname(out), "..", "phi.ico"), "ICO")
+
+def png_bytes(size: int) -> bytes:
+    data = QByteArray()                       # keep a reference: QBuffer does not own it
+    buf = QBuffer(data)
+    buf.open(QIODevice.OpenModeFlag.WriteOnly)
+    icon.pixmap(size, size).save(buf, "PNG")
+    buf.close()
+    return bytes(data)
+
+
+# extension icons
+out = os.path.join(ROOT, "extension", "icons")
+os.makedirs(out, exist_ok=True)
+for size in (16, 32, 48, 128):
+    with open(os.path.join(out, f"{size}.png"), "wb") as fh:
+        fh.write(png_bytes(size))
+
+# Windows .ico with every size Explorer, the taskbar and the Start menu ask for (PNG-compressed entries)
+sizes = (16, 20, 24, 32, 40, 48, 64, 96, 128, 256)
+images = [(s, png_bytes(s)) for s in sizes]
+header = struct.pack("<HHH", 0, 1, len(images))
+offset = 6 + 16 * len(images)
+entries, blobs = b"", b""
+for s, data in images:
+    entries += struct.pack("<BBBBHHII", s % 256, s % 256, 0, 0, 1, 32, len(data), offset + len(blobs))
+    blobs += data
+with open(os.path.join(ROOT, "phi.ico"), "wb") as fh:
+    fh.write(header + entries + blobs)
+print("wrote phi.ico with", len(images), "sizes")
