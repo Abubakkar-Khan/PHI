@@ -30,7 +30,7 @@ class Ctx:
 def mk_label(text: str, font, color: str | None = None, align=Qt.AlignmentFlag.AlignLeft) -> QLabel:
     lb = QLabel(text)
     lb.setFont(font)
-    lb.setStyleSheet(f"color:{color}; background:transparent;")
+    lb.setStyleSheet(f"color:{color or T.INK}; background:transparent;")
     lb.setAlignment(align | Qt.AlignmentFlag.AlignVCenter)
     return lb
 
