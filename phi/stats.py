@@ -16,6 +16,7 @@ from .db import Store
 from .utils import pretty_app, pretty_site
 
 SCOPES = ("all", "apps", "sites")
+MIN_SECONDS = 60          # anything under a minute is noise: never listed
 
 
 @dataclass
@@ -40,15 +41,16 @@ def breakdown(store: Store, d0: str, d1: str, scope: str = "all") -> list[Item]:
     for kind, name, secs in rows:
         if kind == "site" and name == "youtube.com":
             secs = max(0.0, secs - shorts_total)             # Shorts are listed on their own line
-            if secs < 1:
+            if secs < MIN_SECONDS:
                 continue
             items.append(Item("site", name, "YouTube", "WEBSITE · WITHOUT SHORTS", secs))
         elif kind == "site":
             items.append(Item("site", name, pretty_site(name), "WEBSITE", secs))
         else:
             items.append(Item("app", name, pretty_app(name), "APP", secs))
-    if shorts_total >= 1:
+    if shorts_total >= MIN_SECONDS:
         items.append(Item("shorts", "youtube", "YouTube Shorts", "WEBSITE · SHORTS", shorts_total, True))
+    items = [i for i in items if i.seconds >= MIN_SECONDS]
     if scope == "apps":
         items = [i for i in items if i.kind == "app"]
     elif scope == "sites":

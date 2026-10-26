@@ -46,9 +46,9 @@
 
 PHI sits in your system tray and watches which app or site is in focus, counting time only while you are actually active. When YouTube Shorts (or another site you watch) crosses a limit you set, PHI interrupts you with a full-screen lock or a small card, pauses the video, and closes the tab for you unless you decide otherwise.
 
-- **Tracks time** for desktop apps and websites, with websites split three ways: **YouTube Shorts**, **YouTube** (without Shorts) and **every other site**.
-- **Limits for all of them**: a daily limit per app, per website, and for YouTube, plus separate session and daily limits for Shorts.
-- **Today** is a thoughtful overview (screen time, apps, websites, Shorts, when it happened, how close each limit is). **Activity** is the full history by day, week or month, and every bar opens that day hour by hour.
+- **Tracks time** for desktop apps and websites. Apps come first; websites when you ask, with YouTube Shorts, YouTube (without Shorts) and other sites listed separately.
+- **Limits for anything**: pick any installed app or website and give it a daily limit. Shorts also have session and daily limits.
+- **Today** and **Activity**: a calm overview and the full history by day, week or month, where every bar opens that day.
 - **Detects Shorts** by reading the browser's address bar. The browser extension is optional.
 - **Interrupts you** with a lock screen or a card, a siren, a countdown, and friction that grows each time it has to ask again.
 - **Closes Shorts for you** through the extension, or with Ctrl+W when no extension is connected.
@@ -299,16 +299,20 @@ The only keys PHI ever sends are Ctrl+W (after re-checking the page) and the med
 
 ## Today and Activity
 
-**Today** shows four totals with a 7-day trend (screen time, apps, websites, YouTube Shorts), an insight line (peak hour, top item, Shorts share), a timeline of when apps, websites and Shorts were used, **Limits today** (a progress bar per limit that turns red near the end), and the top apps and top websites.
+Two quiet screens, built to be read at a glance.
 
-**Activity** is the full history:
+**Today** shows how long you have been on the computer, an hourly chart, and a ranked list of what took the time. The list shows **apps**; switch to **Websites** when you want them. Anything under a minute is never listed.
 
-- **Day / Week / Month** with previous and next buttons. A week runs Monday to Sunday.
-- **All / Apps / Websites** filter. Websites are split into YouTube Shorts, YouTube (without Shorts) and other sites.
-- **Click a bar** in the week or month chart to open that day. The day view shows the hourly chart, an hour-by-hour grid for the top eight apps and sites (the "spans"), and the breakdown. "← back" returns to the week or month.
-- Hover any bar or cell to read the exact time.
+**Activity** is the same view for any period:
 
-**Limits** work the same way for every kind of item. Apps and websites have a daily limit in Settings (Watched apps, Watched websites). YouTube has its own limit that counts only non-Shorts time, and Shorts keep their session and daily budgets. When an app reaches its limit PHI shows the lock or card, and "stop" **minimizes** the app instead of closing it, so nothing is lost.
+- **Day / Week / Month** with previous and next arrows. A week runs Monday to Sunday.
+- **Apps / Websites** switch. Websites include YouTube Shorts and YouTube (without Shorts) as separate lines.
+- **Click a bar** in the week or month chart to open that day (hourly chart and list). "Back" returns to the week or month.
+- Hover any bar to read the exact time.
+
+**Limits** live in Settings, not on the dashboard. Every app and website can have a daily limit; YouTube Shorts keep their own session and daily limits. When a limit is reached PHI shows the lock or card, and for an **app** the "stop" action **minimizes** it instead of closing it, so nothing is lost.
+
+**Restricting installed apps.** Settings → Apps → *Add app…* opens a searchable list of the apps installed on the PC (read from the Start menu shortcuts, plus anything PHI has seen you use). Pick one, set the daily limit, done. If an app is not listed, type its name and choose "Use ...".
 
 ---
 
