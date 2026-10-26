@@ -611,13 +611,17 @@ class StatCard(Panel):
 
 # ---------------------------------------------------------------- list row
 class ItemRow(QWidget):
-    """Letter tile, name, a thin share bar, and the time."""
+    """Letter tile, name, a thin share bar, and the time. Hover shows a hide (eye) button."""
+
+    hide_requested = Signal()
 
     def __init__(self, name: str, seconds: float, share: float, last: bool = False, delay: int = 0, index: int = 1, parent=None):
         super().__init__(parent)
         self.name, self.seconds, self.share, self.last = name, seconds, share, last
         self._from = (seconds, share)
         self._u, self._fill, self._hover = 1.0, 0.0, 0.0
+        self._eye_hot = False
+        self.setMouseTracking(True)
         self.setFixedHeight(62)
         self._anim = animator(self, self._set_fill, 700, QEasingCurve.Type.OutCubic)
         self._upd = animator(self, self._set_u, 420)
@@ -662,7 +666,51 @@ class ItemRow(QWidget):
         run(self._h, self._hover, 1)
 
     def leaveEvent(self, e):
+        self._eye_hot = False
+        self.setCursor(Qt.CursorShape.ArrowCursor)
         run(self._h, self._hover, 0)
+
+    def _eye_rect(self) -> QRectF:
+        return QRectF(self.width() - 172, 8, 28, 26)
+
+    def mouseMoveEvent(self, e):
+        hot = self._eye_rect().contains(e.position())
+        if hot != self._eye_hot:
+            self._eye_hot = hot
+            self.setCursor(Qt.CursorShape.PointingHandCursor if hot else Qt.CursorShape.ArrowCursor)
+            self.setToolTip("Hide from activity" if hot else "")
+            self.update()
+
+    def mousePressEvent(self, e):
+        if e.button() == Qt.MouseButton.LeftButton and self._eye_rect().contains(e.position()):
+            self.hide_requested.emit()
+
+    def contextMenuEvent(self, e):
+        from PySide6.QtWidgets import QMenu
+        menu = QMenu(self)
+        act = menu.addAction(f"Hide \u201c{self.name}\u201d from activity")
+        if menu.exec(e.globalPos()) is act:
+            self.hide_requested.emit()
+
+    def _paint_eye(self, p: QPainter) -> None:
+        """A small crossed-out eye, drawn with paths so it follows the theme."""
+        r = self._eye_rect()
+        if self._eye_hot:
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QColor(T.CELL))
+            p.drawRoundedRect(r, 8, 8)
+        c = r.center()
+        col = QColor(T.INK if self._eye_hot else T.GRAY)
+        col.setAlphaF(min(1.0, self._hover))
+        p.setPen(QPen(col, 1.6, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        eye = QPainterPath()
+        eye.moveTo(c.x() - 8, c.y())
+        eye.quadTo(c.x(), c.y() - 9, c.x() + 8, c.y())
+        eye.quadTo(c.x(), c.y() + 9, c.x() - 8, c.y())
+        p.drawPath(eye)
+        p.drawEllipse(c, 2.2, 2.2)
+        p.drawLine(QPointF(c.x() - 7, c.y() + 7), QPointF(c.x() + 7, c.y() - 7))
 
     def paintEvent(self, _):
         p = QPainter(self)
@@ -678,7 +726,9 @@ class ItemRow(QWidget):
         p.setBrush(QColor(T.SOFT))
         p.drawRoundedRect(tile, 11, 11)
         label_font_paint(p, tile, self.name[:1].upper(), T.sans(16, T.QFont.Weight.Medium), T.INK, Qt.AlignmentFlag.AlignCenter)
-        label_font_paint(p, QRectF(72, 9, w - 200, 24), self.name, T.sans(15, T.QFont.Weight.Medium), T.INK)
+        label_font_paint(p, QRectF(72, 9, w - 250, 24), self.name, T.sans(15, T.QFont.Weight.Medium), T.INK)
+        if self._hover > 0.05:
+            self._paint_eye(p)
         track = QRectF(72, 38, max(40.0, w - 72 - 130), 5)
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(QColor(T.CELL))

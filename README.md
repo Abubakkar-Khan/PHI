@@ -433,6 +433,7 @@ The tables are independent on purpose. `usage` and `events` only share the `day`
 | `watched_sites` | Instagram and Reddit on (15 min), TikTok, X and YouTube off | Per-website daily limits. The `youtube.com` entry counts YouTube **without Shorts** |
 | `watched_apps` | none | Per-app daily limits, as `{exe, limit, enabled}`. When one is reached the app is **minimized**, never closed |
 | `excluded_sites` | none | Sites that are never recorded |
+| `hidden_items` | none | Apps/websites hidden from Today and Activity (hover a row and click the eye, or right-click). Display only: lists, charts and totals leave them out, data and limits are untouched. Undo right after, or review under Settings > General > Privacy |
 | `theme_mode` | `light` | `light`, `dark` or `custom` |
 | `theme_bg`, `theme_text`, `theme_accent` | `#F0EFEB`, `#171717`, `#E53935` | The three colours used by the custom theme |
 | `reminder_items` | one "Take a break" every 30 min, off | List of timers and alarms: `id`, `message`, `mode` (`interval` or `daily`), `every_min`, `time`, `enabled`, `sound` |

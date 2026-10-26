@@ -10,6 +10,7 @@ from .. import autostart
 from ..utils import clean_domain, pretty_app, pretty_site
 from . import theme as T
 from .apppicker import AppPicker
+from .hiddendialog import HiddenDialog
 from .pages import Ctx, Page, mk_label
 from .widgets import Hairline, LinkButton, Panel, PillButton, Segmented, Stepper, Toggle
 
@@ -324,6 +325,13 @@ class SettingsPage(Page):
             SettingRow("Your name", "Used in the greeting.", name),
             SettingRow("Start with Windows", "", self._toggle("autostart")),
             SettingRow("Keep history for", "Older days are deleted automatically.", self._stepper("retention_days", 7, 730, 7, "days"), last=True),
+        ]))
+        v.addWidget(section("Privacy"))
+        review = PillButton("Review\u2026", "secondary", height=32)
+        review.setFixedWidth(104)
+        review.clicked.connect(lambda: HiddenDialog(cfg, self.window()).exec())
+        v.addWidget(self._group([
+            SettingRow("Hidden activity", "Apps and websites you hid from Activity. Hide one by hovering its row.", review, last=True),
         ]))
         v.addWidget(note("Everything stays on this computer. PHI never records keystrokes, screenshots or page content."))
         v.addStretch(1)

@@ -63,6 +63,7 @@ DEFAULTS = {
         {"domain": "youtube.com", "limit": 60, "enabled": False},   # YouTube without Shorts
     ],
     "excluded_sites": [],
+    "hidden_items": [],            # [{"kind": "app|site|shorts", "key": "...", "label": "..."}] display-only
     "watched_apps": [],            # [{"exe": "discord.exe", "limit": 60, "enabled": true}]
 }
 

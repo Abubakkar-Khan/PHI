@@ -33,7 +33,32 @@ def _scope_kinds(scope: str) -> tuple[str, ...]:
     return {"apps": ("app",), "sites": ("site",)}.get(scope, ("total",))
 
 
-def breakdown(store: Store, d0: str, d1: str, scope: str = "all") -> list[Item]:
+def hidden_pairs(cfg) -> frozenset:
+    """The (kind, key) pairs the user chose to hide from every view."""
+    out = set()
+    for h in cfg.get("hidden_items") or []:
+        try:
+            out.add((h["kind"], h["key"]))
+        except (KeyError, TypeError):
+            continue
+    return frozenset(out)
+
+
+def hide_item(cfg, kind: str, key: str, label: str) -> None:
+    cur = [h for h in cfg.get("hidden_items") or [] if (h.get("kind"), h.get("key")) != (kind, key)]
+    cur.append({"kind": kind, "key": key, "label": label})
+    cfg.set("hidden_items", cur)
+
+
+def unhide_item(cfg, kind: str, key: str) -> None:
+    cfg.set("hidden_items", [h for h in cfg.get("hidden_items") or [] if (h.get("kind"), h.get("key")) != (kind, key)])
+
+
+def _in_scope(kind: str, scope: str) -> bool:
+    return scope == "all" or (scope == "apps") == (kind == "app")
+
+
+def breakdown(store: Store, d0: str, d1: str, scope: str = "all", hidden=frozenset()) -> list[Item]:
     """Ranked items between two ISO dates (inclusive)."""
     rows = store.by_name(d0, d1, ("app", "site"))
     shorts_total = sum(s for _k, _n, s in store.by_name(d0, d1, ("shorts",)))
@@ -50,7 +75,7 @@ def breakdown(store: Store, d0: str, d1: str, scope: str = "all") -> list[Item]:
             items.append(Item("app", name, pretty_app(name), "APP", secs))
     if shorts_total >= MIN_SECONDS:
         items.append(Item("shorts", "youtube", "YouTube Shorts", "WEBSITE · SHORTS", shorts_total, True))
-    items = [i for i in items if i.seconds >= MIN_SECONDS]
+    items = [i for i in items if i.seconds >= MIN_SECONDS and (i.kind, i.key) not in hidden]
     if scope == "apps":
         items = [i for i in items if i.kind == "app"]
     elif scope == "sites":
@@ -68,17 +93,24 @@ def hourly_for(store: Store, day: str, item: Item) -> list[float]:
     return hours
 
 
-def hourly_scope(store: Store, day: str, scope: str) -> tuple[list[float], list[float]]:
+def hourly_scope(store: Store, day: str, scope: str, hidden=frozenset()) -> tuple[list[float], list[float]]:
     """(total per hour, Shorts per hour) for the chart of one day."""
     if scope == "all":
         total = store.hourly(day, "total", "*")
     else:
         total = store.hourly_kinds(day, _scope_kinds(scope))
     shorts = store.hourly(day, "shorts", "youtube") if scope != "apps" else [0.0] * 24
+    for kind, key in hidden:
+        if not _in_scope(kind, scope):
+            continue
+        h = hourly_for(store, day, Item(kind, key, key, "", 0))
+        total = [max(0.0, a - b) for a, b in zip(total, h)]
+        if kind == "shorts":
+            shorts = [0.0] * 24
     return total, shorts
 
 
-def daily_scope(store: Store, d0: date, d1: date, scope: str) -> tuple[dict[str, float], dict[str, float]]:
+def daily_scope(store: Store, d0: date, d1: date, scope: str, hidden=frozenset()) -> tuple[dict[str, float], dict[str, float]]:
     """(total per day, Shorts per day) between two dates."""
     a, b = d0.isoformat(), d1.isoformat()
     if scope == "all":
@@ -86,6 +118,16 @@ def daily_scope(store: Store, d0: date, d1: date, scope: str) -> tuple[dict[str,
     else:
         total = store.daily_kind_range(a, b, _scope_kinds(scope))
     shorts = store.daily_kind_range(a, b, ("shorts",), "youtube") if scope != "apps" else {}
+    for kind, key in hidden:
+        if not _in_scope(kind, scope):
+            continue
+        sub = store.daily_kind_range(a, b, (kind,), key)
+        if kind == "site" and key == "youtube.com":
+            sh = store.daily_kind_range(a, b, ("shorts",), "youtube")
+            sub = {d: max(0.0, v - sh.get(d, 0.0)) for d, v in sub.items()}
+        total = {d: max(0.0, v - sub.get(d, 0.0)) for d, v in total.items()}
+        if kind == "shorts":
+            shorts = {}
     return total, shorts
 
 

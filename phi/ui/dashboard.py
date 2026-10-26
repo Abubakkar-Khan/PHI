@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, timedelta
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QTimer, Qt
 from PySide6.QtGui import QFontMetrics
 from PySide6.QtWidgets import QHBoxLayout, QScrollArea, QVBoxLayout, QWidget
 
@@ -51,16 +51,54 @@ def _forget(layout: QVBoxLayout) -> None:
 
 
 class ItemList(QWidget):
-    """A ranked list. Reuses its rows when the ranking is unchanged."""
+    """A ranked list. Reuses its rows when the ranking is unchanged.
 
-    def __init__(self, empty_text: str):
+    Rows can be hidden for good (display only); a short Undo bar appears under the list."""
+
+    def __init__(self, empty_text: str, on_hide=None, on_undo=None):
         super().__init__()
         self.empty_text = empty_text
-        self._lay = QVBoxLayout(self)
+        self.on_hide, self.on_undo = on_hide, on_undo
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        self._rows_box = QWidget()
+        self._lay = QVBoxLayout(self._rows_box)
         self._lay.setContentsMargins(0, 0, 0, 0)
         self._lay.setSpacing(0)
+        outer.addWidget(self._rows_box)
+        self._toast = QWidget()
+        tl = QHBoxLayout(self._toast)
+        tl.setContentsMargins(20, 6, 20, 6)
+        self._toast_lbl = mk_label("", T.sans(13), T.GRAY)
+        self._undo = LinkButton("Undo", size=13)
+        tl.addWidget(self._toast_lbl, 1)
+        tl.addWidget(self._undo)
+        self._toast.hide()
+        outer.addWidget(self._toast)
+        self._timer = QTimer(self)
+        self._timer.setSingleShot(True)
+        self._timer.timeout.connect(self._toast.hide)
+        self._undo.clicked.connect(self._do_undo)
+        self._undo_item: Item | None = None
         self._keys: list | None = None
         self._rows: list[ItemRow] = []
+
+    def _hide_item(self, it: Item) -> None:
+        if not self.on_hide:
+            return
+        self._undo_item = it
+        self._toast_lbl.setText(f"\u201c{it.label}\u201d is hidden. Manage it in Settings \u203a General.")
+        self._toast.show()
+        self._timer.start(6000)
+        self.on_hide(it)
+
+    def _do_undo(self) -> None:
+        it, self._undo_item = self._undo_item, None
+        self._toast.hide()
+        self._timer.stop()
+        if it and self.on_undo:
+            self.on_undo(it)
 
     def set_items(self, items: list[Item], force: bool = False) -> None:
         top = items[0].seconds if items else 1.0
@@ -78,12 +116,24 @@ class ItemList(QWidget):
             return
         for idx, it in enumerate(items):
             row = ItemRow(it.label, it.seconds, it.seconds / top, last=idx == len(items) - 1, delay=50 * idx, index=idx + 1)
+            row.hide_requested.connect(lambda it=it: self._hide_item(it))
             self._rows.append(row)
             self._lay.addWidget(row)
 
     def replay(self) -> None:
         for i, row in enumerate(self._rows):
             row.replay(80 + 50 * i)
+
+
+def _hide_hooks(ctx: Ctx, page):
+    def hide(it: Item) -> None:
+        stats.hide_item(ctx.cfg, it.kind, it.key, it.label)
+        page.refresh(True)
+
+    def undo(it: Item) -> None:
+        stats.unhide_item(ctx.cfg, it.kind, it.key)
+        page.refresh(True)
+    return hide, undo
 
 
 def card_with(title_widget: QWidget, body: QWidget, margins=(18, 14, 18, 14)) -> Panel:
@@ -130,7 +180,7 @@ class TodayPage(Page):
 
         self.kind_seg = Segmented(["Apps", "Websites"])
         self.list_title = SectionTitle("Where your time went", self.kind_seg)
-        self.list = ItemList("Nothing over a minute yet.")
+        self.list = ItemList("Nothing over a minute yet.", *_hide_hooks(ctx, self))
         v.addWidget(card_with(self.list_title, self.list, margins=(12, 14, 12, 8)))
         v.addStretch(1)
 
@@ -142,9 +192,9 @@ class TodayPage(Page):
         self.chart.replay()
         self.list.replay()
 
-    def _series7(self, kinds: tuple[str, ...], name: str | None = None) -> list[float]:
+    def _series7(self, hidden) -> list[float]:
         today = date.today()
-        got = self.ctx.store.daily_kind_range((today - timedelta(days=6)).isoformat(), today.isoformat(), kinds, name)
+        got, _sh = stats.daily_scope(self.ctx.store, today - timedelta(days=6), today, "all", hidden)
         return [got.get((today - timedelta(days=6 - i)).isoformat(), 0.0) for i in range(7)]
 
     def refresh(self, force: bool = False) -> None:
@@ -157,17 +207,20 @@ class TodayPage(Page):
         self.greet.setText(f"Good {part}, {name}." if name else f"Good {part}.")
         self.date_lbl.setText(now.strftime("%A, %d %B"))
 
-        total = eng.today_seconds("total", "*")
-        prev = s.total_until((today - timedelta(days=1)).isoformat(), "total", "*", now.hour)
+        hidden = stats.hidden_pairs(self.ctx.cfg)
+        hrs, _sh = stats.hourly_scope(s, today.isoformat(), "all", hidden)
+        total = sum(hrs)
+        yh, _ysh = stats.hourly_scope(s, (today - timedelta(days=1)).isoformat(), "all", hidden)
+        prev = sum(yh[:now.hour + 1])
         sub = "since midnight"
         if prev >= 300 and total >= 60 and total < prev * 3:
             pct = round((total - prev) / prev * 100)
             if pct:
                 sub = f"{abs(pct)}% {'more' if pct > 0 else 'less'} than yesterday so far"
-        self.c_time.set_data(fmt_dur(total) if total >= 60 else "0m", sub, self._series7(("total",), "*"))
+        self.c_time.set_data(fmt_dur(total) if total >= 60 else "0m", sub, self._series7(hidden))
 
         scope = SCOPES[self.kind_seg.index]
-        items = stats.breakdown(s, today.isoformat(), today.isoformat(), scope)
+        items = stats.breakdown(s, today.isoformat(), today.isoformat(), scope, hidden)
         self.c_top.title = f"Most used {SCOPE_NOUN[scope]}"
         if items:
             self.c_top.set_data(items[0].label, f"{fmt_dur(items[0].seconds)} today")
@@ -179,7 +232,7 @@ class TodayPage(Page):
         self.c_alerts.set_data(str(nudges), f"{stopped} stopped when asked" if nudges else "You are within your limits",
                                s.event_series(today, 7, "nudge"))
 
-        hours = s.hourly(today.isoformat(), "total", "*")
+        hours = hrs
         self.chart.tips = [f"{h:02d}:00" for h in range(24)]
         self.chart.set_columns([(f"{h:02d}" if h % 3 == 0 else "", hours[h], h == now.hour) for h in range(24)])
 
@@ -258,7 +311,7 @@ class ActivityPage(Page):
         v.addWidget(card)
 
         self.list_title = SectionTitle("Breakdown")
-        self.list = ItemList("Nothing over a minute in this period.")
+        self.list = ItemList("Nothing over a minute in this period.", *_hide_hooks(ctx, self))
         v.addWidget(card_with(self.list_title, self.list, margins=(12, 14, 12, 8)))
         v.addStretch(1)
 
@@ -328,9 +381,10 @@ class ActivityPage(Page):
             self.back_btn.setFixedWidth(QFontMetrics(T.sans(13)).horizontalAdvance(text) + 8)
         self.hint.setVisible(self.mode != 0)
 
-        items = stats.breakdown(s, d0.isoformat(), d1.isoformat(), scope)
+        hidden = stats.hidden_pairs(self.ctx.cfg)
+        items = stats.breakdown(s, d0.isoformat(), d1.isoformat(), scope, hidden)
         if self.mode == 0:
-            hours, _sh = stats.hourly_scope(s, d0.isoformat(), scope)
+            hours, _sh = stats.hourly_scope(s, d0.isoformat(), scope, hidden)
             self.chart.tips = [f"{h:02d}:00" for h in range(24)]
             self.chart.clickable = False
             self.chart.set_columns([(f"{h:02d}" if h % 3 == 0 else "", hours[h], d0 == today and h == now.hour) for h in range(24)], force)
@@ -340,7 +394,7 @@ class ActivityPage(Page):
             peak = max(range(24), key=lambda h: hours[h])
             self.c_mid.set_data(f"{peak:02d}:00" if total >= 60 else "\u2013", fmt_dur(hours[peak]) if total >= 60 else "No activity")
         else:
-            tot, _shd = stats.daily_scope(s, d0, d1, scope)
+            tot, _shd = stats.daily_scope(s, d0, d1, scope, hidden)
             days = [d0 + timedelta(days=i) for i in range((d1 - d0).days + 1)]
             label = (lambda d: d.strftime("%a")) if self.mode == 1 else (lambda d: str(d.day) if d.day % 2 == 1 else "")
             self.chart.tips = [d.strftime("%a %d %b") for d in days]
