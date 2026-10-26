@@ -245,7 +245,7 @@ class LockScreen(QWidget):
 
         status = mk_label("● PHI_ LOCKDOWN", T.mono(13, T.QFont.Weight.Bold, 3), T.RED, Qt.AlignmentFlag.AlignHCenter)
         center(status, 10)
-        self.ring = RingMascot(int(250 * k), 4 if k > .9 else 3, "alert", dark=True)
+        self.ring = RingMascot(int(250 * k), 3 if k > .9 else 2, "alert", dark=True)
         center(self.ring, 6)
         self.title = mk_label("", T.sans(int(78 * k), T.QFont.Weight.Black), T.INK, Qt.AlignmentFlag.AlignHCenter)
         center(self.title, 0)

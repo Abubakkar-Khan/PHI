@@ -299,16 +299,16 @@ The only keys PHI ever sends are Ctrl+W (after re-checking the page) and the med
 
 ## Today and Activity
 
-Two quiet screens, built to be read at a glance.
+The look is utilitarian Swiss with a bit of Nothing: a strong left edge, numbered sections (`01 WHEN`, `02 WHAT`), hairline rules, mono labels, one red accent, and a **dot-matrix readout** for the big number. The hourly chart is built from dots, and each list row ends in a dot bar whose last lit dot is red.
 
-**Today** shows how long you have been on the computer, an hourly chart, and a ranked list of what took the time. The list shows **apps**; switch to **Websites** when you want them. Anything under a minute is never listed.
+**Today** shows the time on the computer as a dot-matrix number, when it happened, and what took the time. The list shows **apps**; switch to **Websites** when you want them. Anything under a minute is never listed.
 
 **Activity** is the same view for any period:
 
 - **Day / Week / Month** with previous and next arrows. A week runs Monday to Sunday.
 - **Apps / Websites** switch. Websites include YouTube Shorts and YouTube (without Shorts) as separate lines.
-- **Click a bar** in the week or month chart to open that day (hourly chart and list). "Back" returns to the week or month.
-- Hover any bar to read the exact time.
+- **Click a dot column** in the week or month chart to open that day (hourly chart and list). "Back" returns to the week or month.
+- Hover any column to read the exact time.
 
 **Limits** live in Settings, not on the dashboard. Every app and website can have a daily limit; YouTube Shorts keep their own session and daily limits. When a limit is reached PHI shows the lock or card, and for an **app** the "stop" action **minimizes** it instead of closing it, so nothing is lost.
 

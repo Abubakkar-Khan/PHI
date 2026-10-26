@@ -97,7 +97,7 @@ class ReminderScreen(QWidget):
                 root.addSpacing(after)
 
         center(mk_label("● PHI_ REMINDER", T.mono(13, T.QFont.Weight.Bold, 3), T.RED, Qt.AlignmentFlag.AlignHCenter), 10)
-        self.ring = RingMascot(int(230 * k), 4 if k > .9 else 3, "monitoring", dark=True)
+        self.ring = RingMascot(int(230 * k), 3 if k > .9 else 2, "monitoring", dark=True)
         center(self.ring, 10)
         self.title = mk_label(message, T.sans(int(size * k), T.QFont.Weight.Black), T.INK, Qt.AlignmentFlag.AlignHCenter)
         self.title.setWordWrap(True)

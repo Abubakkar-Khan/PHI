@@ -129,36 +129,64 @@ class Sidebar(QWidget):
         for i in range(len(self.ITEMS)):
             if self._hover[i] > .02 and i != self.index:
                 p.setPen(Qt.PenStyle.NoPen)
-                p.setBrush(T.qc(T.SOFT, self._hover[i] * .55))
+                p.setBrush(T.qc(T.SOFT, self._hover[i]))
                 p.drawRoundedRect(QRectF(14, self._row_y(i), self.width() - 28, self.ROW_H), 11, 11)
         # selected pill: springs between rows and stretches a little while it travels
         stretch = min(7.0, abs(self._ys.v) * 0.012)
         p.setPen(Qt.PenStyle.NoPen)
-        p.setBrush(QColor(T.SOFT))
+        p.setBrush(QColor(T.INK))
         p.drawRoundedRect(QRectF(14, self._y - stretch / 2, self.width() - 28, self.ROW_H + stretch), 11, 11)
         for i, (kind, text) in enumerate(self.ITEMS):
             y = self._row_y(i)
             near = max(0.0, 1 - abs(y - self._y) / (self.ROW_H + self.GAP))
-            col = QColor(T.INK) if near > .5 else QColor(T.GRAY)
+            col = T.mix(T.INK, T.PAPER, near)
             _icon(p, kind, 38, y + self.ROW_H / 2, col)
             label_font_paint(p, QRectF(58, y, 140, self.ROW_H), text, T.sans(14, T.QFont.Weight.Medium if near > .5 else T.QFont.Weight.Normal), col)
+        # selected marker: tiny red LED
+        p.setBrush(QColor(T.RED))
+        p.drawEllipse(QPointF(self.width() - 28, self._y + self.ROW_H / 2), 2.4, 2.4)
 
 
 class _MascotPanel(QWidget):
     """Home of the sidebar mascot. The card is painted once into a pixmap, so 60 fps mascot frames stay cheap."""
-    HEIGHT = 178
+    HEIGHT = 204
 
     def __init__(self, parent):
         super().__init__(parent)
-        self.mascot = Mascot(px=4, mood="monitoring", fill=T.PAPER, parent=self)
+        self.mascot = Mascot(px=3, mood="monitoring", fill=T.PAPER, parent=self)
         self._bg: QPixmap | None = None
         self._bg_key = None
 
     def resizeEvent(self, e):
         self.mascot.move((self.width() - self.mascot.width()) // 2, 6)
 
+    def _background(self) -> QPixmap:
+        dpr = self.devicePixelRatioF()
+        key = (self.width(), self.height(), dpr)
+        if self._bg_key != key:
+            pm = QPixmap(int(self.width() * dpr), int(self.height() * dpr))
+            pm.setDevicePixelRatio(dpr)
+            pm.fill(Qt.GlobalColor.transparent)
+            p = QPainter(pm)
+            p.setRenderHint(QPainter.RenderHint.Antialiasing)
+            p.setPen(QPen(QColor(T.LINE), 1))
+            p.setBrush(QColor(T.SURFACE))
+            p.drawRoundedRect(QRectF(self.rect()).adjusted(.5, .5, -.5, -.5), 14, 14)
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(T.qc(T.INK, .10))
+            for y in range(10, self.height() - 6, 10):
+                for x in range(10, self.width() - 6, 10):
+                    p.drawEllipse(QPointF(x, y), .9, .9)
+            label_font_paint(p, QRectF(0, self.height() - 44, self.width(), 14), "SMALL SCROLLS", T.mono(9, spacing=1.6), T.GRAY, Qt.AlignmentFlag.AlignCenter)
+            label_font_paint(p, QRectF(0, self.height() - 30, self.width(), 14), "BIG LOSSES_", T.mono(9, T.QFont.Weight.Medium, 1.6), T.INK, Qt.AlignmentFlag.AlignCenter)
+            p.end()
+            self._bg, self._bg_key = pm, key
+        return self._bg
+
     def paintEvent(self, ev):
-        pass                                           # just the character, no card or caption
+        p = QPainter(self)
+        p.setClipRegion(ev.region())
+        p.drawPixmap(0, 0, self._background())
 
 
 # ------------------------------------------------------------------ title bar
@@ -211,6 +239,7 @@ class TitleBar(QWidget):
         lay = QHBoxLayout(self)
         lay.setContentsMargins(24, 6, 10, 0)
         lay.setSpacing(0)
+        lay.addWidget(mk_label("•••", T.mono(11, spacing=2), T.GRAY))
         lay.addStretch(1)
         lay.addWidget(CaptionButton("min", win.showMinimized))
         lay.addWidget(CaptionButton("max", win.toggle_max))
@@ -359,6 +388,7 @@ class MainWindow(QWidget):
         p.fillPath(path, QColor(T.BG))
         p.save()
         p.setClipPath(path)
+        p.drawTiledPixmap(self.rect(), self._grain)
         # sidebar hairline
         p.fillRect(QRectF(212, 0, 1, self.height()), QColor(T.LINE))
         p.restore()
