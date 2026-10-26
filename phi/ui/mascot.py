@@ -105,38 +105,58 @@ def _build() -> dict[str, list[list[str]]]:
 
 
 def _hair_buns(base) -> list[list[str]]:
-    """Fia: a smooth cap, curtain bangs, twin buns with orange ties, and little flipped ends."""
+    """Fia, traced from the reference: two big buns with a gap between them, a small cap, wispy bangs,
+    hair falling beside the lenses and a few curling strays."""
     g = _grid()
-    cap = {5: (14, 29), 6: (11, 32), 7: (9, 34), 8: (8, 35), 9: (7, 36), 10: (6, 37), 11: (5, 38),
-           12: (4, 39), 13: (4, 39), 14: (3, 40), 15: (3, 40)}
-    for r, (a, b) in cap.items():
-        _span(g, r, (a, b))
-    for cx in (8.0, 35.0):                                              # the buns
-        for r in range(0, 13):
+
+    def blob(cx, cy, rx, ry):
+        for r in range(SH):
             for c in range(SW):
-                if (c - cx) ** 2 + ((r - 6.0) * 1.05) ** 2 <= 4.7 ** 2:
+                if ((c - cx) / rx) ** 2 + ((r - cy) / ry) ** 2 <= 1.0:
                     g[r][c] = "#"
-    curtain = {16: [(3, 17), (26, 40)], 17: [(3, 15), (28, 40)], 18: [(3, 13), (30, 40)], 19: [(3, 11), (32, 40)],
-               20: [(3, 9), (34, 40)], 21: [(3, 7), (36, 40)], 22: [(3, 7), (36, 40)],
-               23: [(3, 6), (37, 40)], 24: [(3, 6), (37, 40)], 25: [(3, 6), (37, 40)], 26: [(3, 6), (37, 40)]}
-    for r, runs in curtain.items():
+
+    cap = {9: (17, 26), 10: (14, 29), 11: (12, 31), 12: (10, 33), 13: (8, 35), 14: (7, 36), 15: (6, 37)}
+    for r, (x0, x1) in cap.items():
+        _span(g, r, (x0, x1))
+    blob(8.0, 7.4, 6.7, 6.6)                                           # left bun, the bigger one
+    blob(35.0, 6.8, 6.2, 6.4)                                          # right bun, a little higher
+
+    for r in range(13, 25):                                            # hair falling from the buns beside the face
+        k = max(0, (r - 13) // 4)
+        _span(g, r, (5 + k, 8), (35, 38 - k))
+
+    bangs = {
+        16: [(6, 37)],
+        17: [(6, 37)],
+        18: [(6, 37)],
+        19: [(6, 20), (23, 37)],
+        20: [(6, 19), (24, 36)],
+        21: [(6, 15), (17, 18), (25, 36)],
+        22: [(6, 11), (16, 17), (27, 35)],
+        23: [(6, 9), (15, 15), (32, 34)],
+    }
+    for r, runs in bangs.items():
         _span(g, r, *runs)
-    for r in range(27, 35):
-        _span(g, r, (2, 4), (39, 41))
-    _span(g, 35, (1, 3), (40, 42))
-    for r, c in ((7, 5), (8, 6), (5, 5), (7, 38), (6, 40)):                # tie and highlights
-        pass
-    for cx in (8, 35):                                                  # bun shine
-        s = -1 if cx < 20 else 1
-        for dr, dc in ((-3, -2), (-3, -1), (-2, -3)):
-            g[6 + dr][cx + dc * (1 if cx < 20 else -1)] = "g"
-    for r, (a, b) in {8: (14, 18), 9: (12, 15), 12: (6, 7)}.items():
-        _span(g, r, (a, b), ch="g")
-    for r, (a, b) in {8: (25, 29)}.items():
-        _span(g, r, (a, b), ch="g")
-    for (c0, c1) in ((9, 12), (31, 34)):                                # orange ties where the buns meet the head
-        _span(g, 10, (c0, c1), ch="o")
-        _span(g, 9, (c0 + 1, c1 - 1), ch="o")
+    for r in range(18, 22):                                            # thin slits between the strands
+        g[r][13] = g[r][29] = "."
+
+    # curling strays: long hooks beside the cheeks, small arcs over the head
+    left = [(4, 25), (3, 26), (2, 27), (2, 28), (2, 29), (3, 30), (4, 31), (5, 32)]
+    right = [(43 - c, r + 1) for c, r in left]
+    left2 = []
+    right2 = []
+    arcs = [(16, 3), (17, 2), (18, 2), (19, 3), (24, 2), (25, 1), (26, 1), (26, 3)]
+    strays = [(0, 8), (1, 2), (43, 8), (42, 13), (0, 13), (14, 5)]
+    for c, r in left + right + left2 + right2 + arcs + strays:
+        if 0 <= c < SW and 0 <= r < SH:
+            g[r][c] = "#"
+
+    shine = [(4, 3), (5, 3), (3, 5), (4, 5), (5, 6), (6, 7), (8, 2), (9, 3), (10, 4),               # left bun
+             (34, 2), (33, 3), (33, 4), (32, 5), (36, 5), (36, 6), (35, 7),                         # right bun
+             (16, 11), (17, 11), (15, 12), (14, 13), (27, 11), (28, 12), (29, 13)]                  # cap
+    for c, r in shine:
+        if g[r][c] == "#":
+            g[r][c] = "g"
     return g
 
 
@@ -146,10 +166,9 @@ STRANDS = {
     "classic": ([(0, 25), (0, 26), (0, 27), (1, 27), (1, 28), (2, 28), (2, 29), (3, 29), (4, 30), (5, 31), (6, 32),
                  (7, 32), (8, 32), (9, 32), (9, 33), (9, 34), (8, 34), (8, 35), (7, 35), (7, 36), (6, 36), (5, 37),
                  (4, 38)], 10),
-    "buns": ([(4, 19), (3, 19), (2, 18), (1, 18), (0, 17), (0, 16), (4, 24), (3, 25), (2, 25), (1, 26), (0, 27),
-              (0, 28)], 5),
+    "buns": ([], 5),
 }
-PLUS_AT = {"classic": (40, 10), "buns": (41, 3)}
+PLUS_AT = {"classic": (40, 10), "buns": (42, 3)}
 
 
 def set_variant(name: str) -> None:
@@ -164,9 +183,6 @@ def _sprite(variant: str) -> dict[str, list[list[str]]]:
     s = _build()
     if variant == "buns":
         s["hair"] = _hair_buns(s["hair"])
-        gl = s["glasses"]
-        for r, c in ((24, 8), (23, 7), (24, 34), (23, 35)):             # lash flicks at the outer corners
-            gl[r][c] = "#"
     return s
 
 # antennae are drawn cell by cell so they can bend: (row, col)
@@ -325,11 +341,7 @@ def paint_pose(p: QPainter, pose: Pose, px: float, dpr: float, fill: str) -> Non
     elif m == "snore":
         rect(20.8, 36.0, 1.6, 1.0, ink)
 
-    if VARIANT == "buns":
-        c = T.qc(T.ORANGE, 0.5 + 0.25 * min(1.0, pose.blush))
-        rect(11.0, 33.0, 2.0, 1.0, c)
-        rect(30.0, 33.0, 2.0, 1.0, c)
-    elif pose.blush > 0.05:
+    if pose.blush > 0.05:
         c = T.qc(T.ORANGE, 0.55 * min(1.0, pose.blush))
         rect(11.0, 35.0, 2.0, 1.0, c)
         rect(30.0, 35.0, 2.0, 1.0, c)
@@ -843,20 +855,24 @@ GLYPHS = {
 
 
 class WordMark(QWidget):
-    """PHI_ in dot-matrix letters, with a blinking red cursor."""
+    """PHI_ in dot-matrix letters. The red dots after it arrive one by one, hold, then start over."""
+
+    # Red dots lit on each beat: they arrive left to right, one per beat, stay lit for a moment, then reset.
+    DOT_BEATS = (0, 1, 2, 3, 4, 5, 5, 5)
+    BEAT_MS = 190
 
     def __init__(self, dot: float = 3.0, text: str = "PHI_", parent=None):
         super().__init__(parent)
         self._dot, self._text = dot, text
-        self._on = True
+        self._beat = 0
         step = dot * 2.2
         self.setFixedSize(int(len(text) * 6 * step), int(7 * step) + 2)
         self._timer = QTimer(self)
-        self._timer.setInterval(560)
-        self._timer.timeout.connect(self._blink)
+        self._timer.setInterval(self.BEAT_MS)
+        self._timer.timeout.connect(self._advance)
 
-    def _blink(self):
-        self._on = not self._on
+    def _advance(self):
+        self._beat = (self._beat + 1) % len(self.DOT_BEATS)
         self.update()
 
     def showEvent(self, e):
@@ -872,6 +888,8 @@ class WordMark(QWidget):
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         p.setPen(Qt.PenStyle.NoPen)
         step = self._dot * 2.2
+        lit = self.DOT_BEATS[self._beat]
+        prev = self.DOT_BEATS[self._beat - 1]
         for gi, ch in enumerate(self._text):
             glyph = GLYPHS[ch]
             for y, row in enumerate(glyph):
@@ -879,10 +897,14 @@ class WordMark(QWidget):
                     if v != "#":
                         continue
                     cursor = ch == "_"
-                    if cursor and not self._on:
-                        continue
+                    radius = self._dot * 0.8
+                    if cursor:
+                        if x >= lit:
+                            continue                           # this dot has not arrived yet
+                        if x == lit - 1 and lit > prev:
+                            radius *= 1.3                      # the newest dot pops a little as it lands
                     p.setBrush(QColor(T.RED if cursor else T.INK))
-                    p.drawEllipse(QPointF((gi * 6 + x) * step + step / 2, y * step + step / 2 + 1), self._dot * 0.8, self._dot * 0.8)
+                    p.drawEllipse(QPointF((gi * 6 + x) * step + step / 2, y * step + step / 2 + 1), radius, radius)
 
 
 def ghost_icon(mood: str = "monitoring", size: int = 256) -> QIcon:
