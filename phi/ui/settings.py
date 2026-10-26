@@ -11,7 +11,6 @@ from ..utils import clean_domain, pretty_app, pretty_site
 from . import theme as T
 from .apppicker import AppPicker
 from .hiddendialog import HiddenDialog
-from .mascot import VARIANTS
 from .pages import Ctx, Page, mk_label
 from .widgets import Hairline, LinkButton, Panel, PillButton, Segmented, Stepper, Toggle
 
@@ -322,12 +321,7 @@ class SettingsPage(Page):
         name.setPlaceholderText("Optional")
         name.setFixedSize(180, 30)
         name.editingFinished.connect(lambda: cfg.set("name", name.text().strip()))
-        keys = list(VARIANTS)
-        char_seg = Segmented(list(VARIANTS.values()))
-        char_seg.set_index(keys.index(cfg.get("character")) if cfg.get("character") in keys else 0)
-        char_seg.changed.connect(lambda i: cfg.set("character", keys[i]))
         v.addWidget(self._group([
-            SettingRow("Character", "Your companion. Phi, Mia, Curly or Beanie.", char_seg),
             SettingRow("Your name", "Used in the greeting.", name),
             SettingRow("Start with Windows", "", self._toggle("autostart")),
             SettingRow("Keep history for", "Older days are deleted automatically.", self._stepper("retention_days", 7, 730, 7, "days"), last=True),
