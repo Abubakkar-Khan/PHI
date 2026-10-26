@@ -102,7 +102,72 @@ def _build() -> dict[str, list[list[str]]]:
     return {"skin": skin, "line": line, "hair": hair, "glasses": glasses}
 
 
-_SPRITE = _build()
+
+
+def _hair_buns(base) -> list[list[str]]:
+    """Fia: a smooth cap, curtain bangs, twin buns with orange ties, and little flipped ends."""
+    g = _grid()
+    cap = {5: (14, 29), 6: (11, 32), 7: (9, 34), 8: (8, 35), 9: (7, 36), 10: (6, 37), 11: (5, 38),
+           12: (4, 39), 13: (4, 39), 14: (3, 40), 15: (3, 40)}
+    for r, (a, b) in cap.items():
+        _span(g, r, (a, b))
+    for cx in (8.0, 35.0):                                              # the buns
+        for r in range(0, 13):
+            for c in range(SW):
+                if (c - cx) ** 2 + ((r - 6.0) * 1.05) ** 2 <= 4.7 ** 2:
+                    g[r][c] = "#"
+    curtain = {16: [(3, 17), (26, 40)], 17: [(3, 15), (28, 40)], 18: [(3, 13), (30, 40)], 19: [(3, 11), (32, 40)],
+               20: [(3, 9), (34, 40)], 21: [(3, 7), (36, 40)], 22: [(3, 7), (36, 40)],
+               23: [(3, 6), (37, 40)], 24: [(3, 6), (37, 40)], 25: [(3, 6), (37, 40)], 26: [(3, 6), (37, 40)]}
+    for r, runs in curtain.items():
+        _span(g, r, *runs)
+    for r in range(27, 35):
+        _span(g, r, (2, 4), (39, 41))
+    _span(g, 35, (1, 3), (40, 42))
+    for r, c in ((7, 5), (8, 6), (5, 5), (7, 38), (6, 40)):                # tie and highlights
+        pass
+    for cx in (8, 35):                                                  # bun shine
+        s = -1 if cx < 20 else 1
+        for dr, dc in ((-3, -2), (-3, -1), (-2, -3)):
+            g[6 + dr][cx + dc * (1 if cx < 20 else -1)] = "g"
+    for r, (a, b) in {8: (14, 18), 9: (12, 15), 12: (6, 7)}.items():
+        _span(g, r, (a, b), ch="g")
+    for r, (a, b) in {8: (25, 29)}.items():
+        _span(g, r, (a, b), ch="g")
+    for (c0, c1) in ((9, 12), (31, 34)):                                # orange ties where the buns meet the head
+        _span(g, 10, (c0, c1), ch="o")
+        _span(g, 9, (c0 + 1, c1 - 1), ch="o")
+    return g
+
+
+VARIANTS = {"classic": "Phi", "buns": "Fia"}
+VARIANT = "classic"
+STRANDS = {
+    "classic": ([(0, 25), (0, 26), (0, 27), (1, 27), (1, 28), (2, 28), (2, 29), (3, 29), (4, 30), (5, 31), (6, 32),
+                 (7, 32), (8, 32), (9, 32), (9, 33), (9, 34), (8, 34), (8, 35), (7, 35), (7, 36), (6, 36), (5, 37),
+                 (4, 38)], 10),
+    "buns": ([(4, 19), (3, 19), (2, 18), (1, 18), (0, 17), (0, 16), (4, 24), (3, 25), (2, 25), (1, 26), (0, 27),
+              (0, 28)], 5),
+}
+PLUS_AT = {"classic": (40, 10), "buns": (41, 3)}
+
+
+def set_variant(name: str) -> None:
+    """Pick which character every Mascot and icon draws."""
+    global VARIANT
+    VARIANT = name if name in VARIANTS else "classic"
+    _layers.cache_clear()
+
+
+@lru_cache(maxsize=4)
+def _sprite(variant: str) -> dict[str, list[list[str]]]:
+    s = _build()
+    if variant == "buns":
+        s["hair"] = _hair_buns(s["hair"])
+        gl = s["glasses"]
+        for r, c in ((24, 8), (23, 7), (24, 34), (23, 35)):             # lash flicks at the outer corners
+            gl[r][c] = "#"
+    return s
 
 # antennae are drawn cell by cell so they can bend: (row, col)
 _STRANDS = [(0, 25), (0, 26), (0, 27), (1, 27), (1, 28), (2, 28), (2, 29), (3, 29), (4, 30), (5, 31), (6, 32),
@@ -112,15 +177,15 @@ _STRAND_BASE = 10
 
 
 @lru_cache(maxsize=24)
-def _layers(cell_dev: int, ratio: float, fill: str) -> dict[str, QPixmap]:
+def _layers(cell_dev: int, ratio: float, fill: str, variant: str = "classic") -> dict[str, QPixmap]:
     """Pre-render each layer at an integer number of device pixels per cell (so cell edges never blur)."""
-    plan = (("skin", {"#": fill}), ("line", {"#": T.INK}), ("hair", {"#": T.INK, "g": HI}), ("glasses", {"#": T.INK}))
+    plan = (("skin", {"#": fill}), ("line", {"#": T.INK}), ("hair", {"#": T.INK, "g": HI, "o": T.ORANGE}), ("glasses", {"#": T.INK}))
     out: dict[str, QPixmap] = {}
     for name, colors in plan:
         img = QImage(SW * cell_dev, SH * cell_dev, QImage.Format.Format_ARGB32_Premultiplied)
         img.fill(Qt.GlobalColor.transparent)
         q = QPainter(img)
-        for r, row in enumerate(_SPRITE[name]):
+        for r, row in enumerate(_sprite(variant)[name]):
             c = 0
             while c < SW:
                 ch = row[c]
@@ -182,7 +247,7 @@ class Pose:
 
 def paint_pose(p: QPainter, pose: Pose, px: float, dpr: float, fill: str) -> None:
     cell_dev = max(1, round(px * dpr))
-    L = _layers(cell_dev, cell_dev / px, fill)
+    L = _layers(cell_dev, cell_dev / px, fill, VARIANT)
     p.setRenderHint(QPainter.RenderHint.Antialiasing, False)
     p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, False)
     ink = QColor(T.INK)
@@ -260,24 +325,30 @@ def paint_pose(p: QPainter, pose: Pose, px: float, dpr: float, fill: str) -> Non
     elif m == "snore":
         rect(20.8, 36.0, 1.6, 1.0, ink)
 
-    if pose.blush > 0.05:
+    if VARIANT == "buns":
+        c = T.qc(T.ORANGE, 0.5 + 0.25 * min(1.0, pose.blush))
+        rect(11.0, 33.0, 2.0, 1.0, c)
+        rect(30.0, 33.0, 2.0, 1.0, c)
+    elif pose.blush > 0.05:
         c = T.qc(T.ORANGE, 0.55 * min(1.0, pose.blush))
         rect(11.0, 35.0, 2.0, 1.0, c)
         rect(30.0, 35.0, 2.0, 1.0, c)
 
     # antennae bend from their base on the hair
-    for r, c in _STRANDS:
-        rect(c + pose.shear * (_STRAND_BASE - r) + pose.hair_dx, r + pose.hair_dy, 1, 1, ink)
+    strands, base_row = STRANDS[VARIANT]
+    for r, c in strands:
+        rect(c + pose.shear * (base_row - r) + pose.hair_dx, r + pose.hair_dy, 1, 1, ink)
 
     # the orange plus floating off the hair
     a = pose.plus_k
     col = QColor(pose.plus_color)
     ph = pose.plus_dy
-    rect(40, 10 + ph, 2, 2, col)
-    rect(40 - a, 10 + ph, a, 2, col)
-    rect(42, 10 + ph, a, 2, col)
-    rect(40, 10 - a + ph, 2, a, col)
-    rect(40, 12 + ph, 2, a, col)
+    qx, qy = PLUS_AT[VARIANT]
+    rect(qx, qy + ph, 2, 2, col)
+    rect(qx - a, qy + ph, a, 2, col)
+    rect(qx + 2, qy + ph, a, 2, col)
+    rect(qx, qy - a + ph, 2, a, col)
+    rect(qx, qy + 2 + ph, 2, a, col)
 
     if pose.bang > 0.05:                                # alert: red "!"
         s_ = min(1.2, pose.bang)
@@ -652,7 +723,7 @@ class Mascot(QWidget):
         # particles
         if m in ("monitoring", "idle", "celebrate") and t >= self._plus_at:
             self._plus_at = t + rng.uniform(2.4, 4.2)
-            self._spawn("plus", OX + 41.0, OY + 11.0, rng.uniform(1.0, 2.4), -rng.uniform(3.0, 4.6), 1.3, 0.7, 0.7, T.ORANGE)
+            self._spawn("plus", OX + PLUS_AT[VARIANT][0] + 1.0, OY + PLUS_AT[VARIANT][1] + 1.0, rng.uniform(1.0, 2.4), -rng.uniform(3.0, 4.6), 1.3, 0.7, 0.7, T.ORANGE)
         if m == "sleep" and t >= self._z_at:
             self._z_at = t + 1.5
             self._spawn("z", OX + 38.0, OY + 12.0, 3.0, -4.0, 2.6, 0.6, 1.1, T.GRAY)

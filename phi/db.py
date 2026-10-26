@@ -33,6 +33,7 @@ CREATE TABLE IF NOT EXISTS settings (
 
 DEFAULTS = {
     "name": "",
+    "character": "classic",        # classic | buns
     "theme_mode": "light",         # light | dark | custom
     "theme_bg": "#F0EFEB",         # custom theme colours
     "theme_text": "#171717",
