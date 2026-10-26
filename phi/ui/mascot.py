@@ -55,33 +55,31 @@ def _build() -> dict[str, list[list[str]]]:
     # --- face: wide at the lenses, tapering to a flat chin
     for r in range(15, 31):
         _span(skin, r, (7, 36))
-    edges = {31: (7, 36), 32: (7, 36), 33: (8, 35), 34: (9, 34), 35: (10, 33), 36: (11, 32),
-             37: (12, 31), 38: (13, 30), 39: (14, 29)}
+    edges = {31: (7, 36), 32: (7, 36), 33: (7, 36), 34: (8, 35), 35: (9, 34), 36: (10, 33),
+             37: (12, 31), 38: (14, 29), 39: (16, 27)}
     for r, (a, b) in edges.items():
         _span(skin, r, (a, b))
-        if r >= 33:
+        if r >= 34:
             line[r][a] = line[r][b] = "#"                       # jaw outline
-    _span(line, 40, (14, 29))                                  # chin line
-    for r in (29, 30, 31):                                     # ears
-        _span(skin, r, (5, 6), (37, 38))
-        line[r][4] = line[r][39] = "#"
-    for r in (28, 32):
-        _span(line, r, (5, 6), (37, 38))
+    _span(line, 40, (16, 27))                                  # chin line
+    for r in (30, 31):                                         # small ears
+        _span(skin, r, (6, 6), (37, 37))
+        line[r][5] = line[r][38] = "#"
+    for r in (29, 32):
+        _span(line, r, (6, 6), (37, 37))
 
     # --- hair: rough silhouette, a pointed bang between the lenses, forehead showing on the right
     rows = {
         4: [(15, 24)], 5: [(14, 27)], 6: [(11, 29)], 7: [(9, 31)], 8: [(8, 33)], 9: [(7, 35)],
-        10: [(6, 37)], 11: [(5, 38)], 12: [(4, 40)], 13: [(3, 41)], 14: [(3, 41)], 15: [(3, 42)],
-        16: [(3, 28), (31, 42)], 17: [(3, 26), (32, 42)], 18: [(4, 24), (33, 41)],
-        19: [(4, 22), (34, 43)], 20: [(5, 22), (34, 40)], 21: [(6, 21), (34, 39)],
+        10: [(6, 37)], 11: [(5, 38)], 12: [(4, 40)], 13: [(3, 41)], 14: [(3, 41)], 15: [(3, 41)],
+        16: [(3, 28), (31, 41)], 17: [(3, 26), (32, 41)], 18: [(4, 24), (33, 41)],
+        19: [(4, 22), (34, 41)], 20: [(5, 22), (34, 40)], 21: [(6, 21), (34, 39)],
         22: [(7, 20), (35, 38)], 23: [(8, 19), (35, 37)],
         24: [(7, 9), (34, 36)], 25: [(7, 9), (34, 36)], 26: [(8, 9), (35, 36)],
     }
     for r, runs in rows.items():
         _span(hair, r, *runs)
-    for r, runs in {19: [(1, 3)], 14: [(1, 2)], 22: [(5, 6)], 12: [(41, 42)], 21: [(40, 41)], 25: [(10, 10)]}.items():
-        _span(hair, r, *runs)                                   # loose spikes
-    for r, c in ((6, 11), (7, 9), (13, 3), (8, 33), (16, 3), (18, 41), (10, 6)):   # nicks in the edge
+    for r, c in ((6, 11), (13, 3), (16, 3), (10, 6)):          # a few nicks in the edge
         hair[r][c] = "."
     for r, (a, b) in {7: (19, 24), 8: (20, 22), 13: (11, 14), 14: (10, 13), 15: (9, 10), 18: (9, 10), 19: (8, 9),
                       17: (18, 19), 10: (28, 30)}.items():
@@ -95,8 +93,8 @@ def _build() -> dict[str, list[list[str]]]:
 
     # --- glasses: two thick square rims joined by a short bridge
     for x0, x1 in ((10, 20), (23, 33)):
-        _span(glasses, 24, (x0, x1))
-        _span(glasses, 34, (x0, x1))
+        _span(glasses, 24, (x0 + 1, x1 - 1))
+        _span(glasses, 34, (x0 + 1, x1 - 1))
         for r in range(25, 34):
             glasses[r][x0] = glasses[r][x1] = "#"
     _span(glasses, 27, (21, 22))
@@ -158,7 +156,7 @@ class Pose:
     lx: float = 0.0            # where the eyes are looking, cells
     ly: float = 0.0
     mouth: str = "flat"        # flat | smile | grin | o | worried | yawn | snore
-    blush: float = 0.0
+    blush: float = 0.4
     plus_k: float = 1.0
     plus_color: str = T.ORANGE
     plus_dy: float = 0.0
@@ -462,7 +460,7 @@ class Mascot(QWidget):
             sm.target = st[key]
             if first:
                 sm.snap(st[key])
-        self._blush.target = 1.0 if self._mood == "celebrate" else 0.0
+        self._blush.target = 1.0 if self._mood == "celebrate" else 0.4
         if first:
             self._blush.snap(self._blush.target)
             return

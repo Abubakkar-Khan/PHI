@@ -15,8 +15,8 @@ from .widgets import Hairline, LinkButton, Panel, PillButton, Segmented, Stepper
 
 
 def section(text: str) -> QLabel:
-    lb = mk_label(text.upper(), T.mono(11, T.QFont.Weight.Medium, 1.6), T.INK)
-    lb.setContentsMargins(0, 8, 0, 4)
+    lb = mk_label(text, T.sans(17, T.QFont.Weight.Medium), T.INK)
+    lb.setContentsMargins(2, 10, 0, 4)
     return lb
 
 
@@ -102,6 +102,7 @@ class LimitRow(QWidget):
         lay = QHBoxLayout(self)
         lay.setContentsMargins(18, 8, 18, 8)
         lay.setSpacing(12)
+        lay.addWidget(tile(name))
         col = QVBoxLayout()
         col.setSpacing(0)
         col.addWidget(mk_label(name, T.sans(14, T.QFont.Weight.Medium)))

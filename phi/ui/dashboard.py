@@ -1,7 +1,7 @@
 """Today and Activity.
 
-Swiss grid, numbered sections, a dot-matrix readout: the number first, then when it happened, then what took
-the time. Apps come first; websites only when asked.
+Three summary cards, a chart, and a ranked list. Apps come first; websites only when asked.
+Plain language, one idea per card, nothing you have to decode.
 """
 from __future__ import annotations
 
@@ -13,21 +13,16 @@ from PySide6.QtWidgets import QHBoxLayout, QScrollArea, QVBoxLayout, QWidget
 
 from .. import stats
 from ..stats import Item
+from ..utils import fmt_dur
 from . import theme as T
 from .pages import Ctx, Page, mk_label
-from .widgets import DotChart, DotNumber, ItemRow, LinkButton, Panel, PillButton, SectionHead, Segmented, StatusChip
+from .widgets import (BarChart, ItemRow, LinkButton, Panel, PillButton, SectionTitle, Segmented, StatCard, StatusChip)
 
 SCOPES = ("apps", "sites")           # the list switch: apps first, websites only when asked
+SCOPE_NOUN = {"apps": "app", "sites": "website"}
 
 
-def dot_dur(seconds: float) -> str:
-    """5H 05M / 47M, for the dot-matrix display."""
-    m = int(seconds // 60)
-    h, m = divmod(m, 60)
-    return f"{h}H {m:02d}M" if h else f"{m}M"
-
-
-def scrolling_body(page: QWidget, margins=(40, 10, 40, 36), spacing: int = 18) -> QVBoxLayout:
+def scrolling_body(page: QWidget, margins=(40, 12, 40, 36), spacing: int = 18) -> QVBoxLayout:
     """Give a page a transparent vertical scroll area and return the layout to fill."""
     outer = QVBoxLayout(page)
     outer.setContentsMargins(0, 0, 0, 0)
@@ -56,18 +51,14 @@ def _forget(layout: QVBoxLayout) -> None:
 
 
 class ItemList(QWidget):
-    """A ranked list between two rules. Reuses its rows when the ranking is unchanged."""
+    """A ranked list. Reuses its rows when the ranking is unchanged."""
 
     def __init__(self, empty_text: str):
         super().__init__()
         self.empty_text = empty_text
-        outer = QVBoxLayout(self)
-        outer.setContentsMargins(0, 0, 0, 0)
-        self.panel = Panel(hoverable=False)
-        self._lay = QVBoxLayout(self.panel)
-        self._lay.setContentsMargins(0, 1, 0, 1)
+        self._lay = QVBoxLayout(self)
+        self._lay.setContentsMargins(0, 0, 0, 0)
         self._lay.setSpacing(0)
-        outer.addWidget(self.panel)
         self._keys: list | None = None
         self._rows: list[ItemRow] = []
 
@@ -81,8 +72,8 @@ class ItemList(QWidget):
         self._keys, self._rows = keys, []
         _forget(self._lay)
         if not items:
-            msg = mk_label(self.empty_text, T.mono(11, spacing=1.0), T.GRAY, Qt.AlignmentFlag.AlignCenter)
-            msg.setMinimumHeight(96)
+            msg = mk_label(self.empty_text, T.sans(14), T.GRAY, Qt.AlignmentFlag.AlignCenter)
+            msg.setMinimumHeight(110)
             self._lay.addWidget(msg)
             return
         for idx, it in enumerate(items):
@@ -95,6 +86,16 @@ class ItemList(QWidget):
             row.replay(80 + 50 * i)
 
 
+def card_with(title_widget: QWidget, body: QWidget, margins=(18, 14, 18, 14)) -> Panel:
+    card = Panel(hoverable=False)
+    lay = QVBoxLayout(card)
+    lay.setContentsMargins(*margins)
+    lay.setSpacing(6)
+    lay.addWidget(title_widget)
+    lay.addWidget(body)
+    return card
+
+
 # ======================================================================== TODAY
 class TodayPage(Page):
     def __init__(self, ctx: Ctx):
@@ -102,40 +103,49 @@ class TodayPage(Page):
         self.ctx = ctx
         v = scrolling_body(self)
 
-        top = QHBoxLayout()
-        self.date_lbl = mk_label("", T.mono(11, spacing=1.6), T.GRAY)
-        top.addWidget(self.date_lbl, 1)
-        self.chip = StatusChip()
-        top.addWidget(self.chip, 0, Qt.AlignmentFlag.AlignRight)
-        v.addLayout(top)
-
+        head = QHBoxLayout()
+        left = QVBoxLayout()
+        left.setSpacing(2)
+        self.date_lbl = mk_label("", T.sans(13), T.GRAY)
         self.greet = mk_label("", T.sans(32, T.QFont.Weight.Medium))
-        v.addWidget(self.greet)
+        left.addWidget(self.date_lbl)
+        left.addWidget(self.greet)
+        head.addLayout(left, 1)
+        self.chip = StatusChip()
+        head.addWidget(self.chip, 0, Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignRight)
+        v.addLayout(head)
 
-        self.number = DotNumber("0M", dot=5.6)
-        v.addWidget(self.number)
-        self.caption = mk_label("ON THE COMPUTER TODAY", T.mono(11, spacing=1.6), T.GRAY)
-        v.addWidget(self.caption)
-        v.addSpacing(10)
+        cards = QHBoxLayout()
+        cards.setSpacing(14)
+        self.c_time = StatCard("Screen time today")
+        self.c_top = StatCard("Most used app")
+        self.c_alerts = StatCard("Limits reached")
+        self.cards = (self.c_time, self.c_top, self.c_alerts)
+        for c in self.cards:
+            cards.addWidget(c, 1)
+        v.addLayout(cards)
 
-        v.addWidget(SectionHead(1, "When"))
-        self.chart = DotChart()
-        self.chart.setMinimumHeight(170)
-        v.addWidget(self.chart)
-        v.addSpacing(8)
+        self.chart = BarChart()
+        v.addWidget(card_with(SectionTitle("Activity by hour"), self.chart))
 
         self.kind_seg = Segmented(["Apps", "Websites"])
-        v.addWidget(SectionHead(2, "What", self.kind_seg))
-        self.list = ItemList("NOTHING OVER A MINUTE YET_")
-        v.addWidget(self.list)
+        self.list_title = SectionTitle("Where your time went", self.kind_seg)
+        self.list = ItemList("Nothing over a minute yet.")
+        v.addWidget(card_with(self.list_title, self.list, margins=(12, 14, 12, 8)))
         v.addStretch(1)
 
         self.kind_seg.changed.connect(lambda _: self.refresh(True))
 
     def enter(self) -> None:
-        self.number.replay()
+        for i, c in enumerate(self.cards):
+            c.replay(i * 70)
         self.chart.replay()
         self.list.replay()
+
+    def _series7(self, kinds: tuple[str, ...], name: str | None = None) -> list[float]:
+        today = date.today()
+        got = self.ctx.store.daily_kind_range((today - timedelta(days=6)).isoformat(), today.isoformat(), kinds, name)
+        return [got.get((today - timedelta(days=6 - i)).isoformat(), 0.0) for i in range(7)]
 
     def refresh(self, force: bool = False) -> None:
         eng, s = self.ctx.engine, self.ctx.store
@@ -145,24 +155,36 @@ class TodayPage(Page):
         name = self.ctx.cfg.get("name").strip()
         part = "morning" if now.hour < 12 else "afternoon" if now.hour < 18 else "evening"
         self.greet.setText(f"Good {part}, {name}." if name else f"Good {part}.")
-        self.date_lbl.setText(now.strftime("%a  ·  %d %b %Y").upper())
+        self.date_lbl.setText(now.strftime("%A, %d %B"))
 
         total = eng.today_seconds("total", "*")
-        self.number.set_text(dot_dur(total))
         prev = s.total_until((today - timedelta(days=1)).isoformat(), "total", "*", now.hour)
-        note = "ON THE COMPUTER TODAY"
+        sub = "since midnight"
         if prev >= 300 and total >= 60 and total < prev * 3:
             pct = round((total - prev) / prev * 100)
             if pct:
-                note += f"  ·  {abs(pct)}% {'MORE' if pct > 0 else 'LESS'} THAN YESTERDAY SO FAR"
-        self.caption.setText(note)
+                sub = f"{abs(pct)}% {'more' if pct > 0 else 'less'} than yesterday so far"
+        self.c_time.set_data(fmt_dur(total) if total >= 60 else "0m", sub, self._series7(("total",), "*"))
+
+        scope = SCOPES[self.kind_seg.index]
+        items = stats.breakdown(s, today.isoformat(), today.isoformat(), scope)
+        self.c_top.title = f"Most used {SCOPE_NOUN[scope]}"
+        if items:
+            self.c_top.set_data(items[0].label, f"{fmt_dur(items[0].seconds)} today")
+        else:
+            self.c_top.set_data("Nothing yet", "Use your computer and check back")
+
+        nudges = s.event_count(today.isoformat(), "nudge")
+        stopped = s.event_count(today.isoformat(), "stop")
+        self.c_alerts.set_data(str(nudges), f"{stopped} stopped when asked" if nudges else "You are within your limits",
+                               s.event_series(today, 7, "nudge"))
 
         hours = s.hourly(today.isoformat(), "total", "*")
         self.chart.tips = [f"{h:02d}:00" for h in range(24)]
         self.chart.set_columns([(f"{h:02d}" if h % 3 == 0 else "", hours[h], h == now.hour) for h in range(24)])
 
-        scope = SCOPES[self.kind_seg.index]
-        self.list.set_items(stats.breakdown(s, today.isoformat(), today.isoformat(), scope)[:8], force)
+        self.list_title.set_title(f"Where your time went  \u00b7  {'apps' if scope == 'apps' else 'websites'}")
+        self.list.set_items(items[:8], force)
         self.update_status(getattr(self, "_last_snap", None))
 
     def update_status(self, snap: dict | None) -> None:
@@ -171,11 +193,11 @@ class TodayPage(Page):
         self._last_snap = snap
         st = snap["status"]
         if st == "paused":
-            self.chip.set_state("PAUSED", "off")
+            self.chip.set_state("Paused", "off")
         elif st == "idle":
-            self.chip.set_state("IDLE", "off")
+            self.chip.set_state("Idle", "off")
         else:
-            self.chip.set_state("MONITORING", "on")
+            self.chip.set_state("Monitoring", "on")
 
 
 # ======================================================================== ACTIVITY
@@ -197,10 +219,10 @@ class ActivityPage(Page):
         self.next_btn = PillButton("\u203a", "secondary", height=32)
         for b in (self.prev_btn, self.next_btn):
             b.setFixedWidth(38)
-        self.period_lbl = mk_label("", T.mono(12, T.QFont.Weight.Medium, 1.0), T.INK, Qt.AlignmentFlag.AlignCenter)
+        self.period_lbl = mk_label("", T.sans(14, T.QFont.Weight.Medium), T.INK, Qt.AlignmentFlag.AlignCenter)
         self.period_lbl.setMinimumWidth(190)
-        self.today_btn = LinkButton("Today", size=12)
-        self.back_btn = LinkButton("Back", size=12)
+        self.today_btn = LinkButton("Today", size=13)
+        self.back_btn = LinkButton("Back", size=13)
         self.scope_seg = Segmented(["Apps", "Websites"])
         bar.addWidget(self.mode_seg)
         bar.addSpacing(8)
@@ -212,26 +234,32 @@ class ActivityPage(Page):
         bar.addStretch(1)
         bar.addWidget(self.scope_seg)
         v.addLayout(bar)
-        v.addSpacing(6)
 
-        self.number = DotNumber("0M", dot=5.0)
-        v.addWidget(self.number)
-        self.caption = mk_label("", T.mono(11, spacing=1.6), T.GRAY)
-        v.addWidget(self.caption)
-        v.addSpacing(10)
+        cards = QHBoxLayout()
+        cards.setSpacing(14)
+        self.c_total = StatCard("Total time")
+        self.c_mid = StatCard("Daily average")
+        self.c_top = StatCard("Most used")
+        self.cards = (self.c_total, self.c_mid, self.c_top)
+        for c in self.cards:
+            cards.addWidget(c, 1)
+        v.addLayout(cards)
 
-        self.chart_head = SectionHead(1, "By hour")
-        v.addWidget(self.chart_head)
-        self.chart = DotChart()
-        self.chart.setMinimumHeight(190)
-        v.addWidget(self.chart)
-        self.hint = mk_label("CLICK A DOT COLUMN TO OPEN THAT DAY", T.mono(10, spacing=1.4), T.GRAY)
-        v.addWidget(self.hint)
-        v.addSpacing(8)
+        self.chart = BarChart()
+        self.chart.setMinimumHeight(210)
+        self.chart_title = SectionTitle("By hour")
+        self.hint = mk_label("Click a bar to open that day", T.sans(12), T.GRAY)
+        hint_row = QWidget()
+        hl = QHBoxLayout(hint_row)
+        hl.setContentsMargins(2, 0, 0, 0)
+        hl.addWidget(self.hint)
+        card = card_with(self.chart_title, self.chart)
+        card.layout().addWidget(hint_row)
+        v.addWidget(card)
 
-        v.addWidget(SectionHead(2, "Breakdown"))
-        self.list = ItemList("NOTHING OVER A MINUTE IN THIS PERIOD_")
-        v.addWidget(self.list)
+        self.list_title = SectionTitle("Breakdown")
+        self.list = ItemList("Nothing over a minute in this period.")
+        v.addWidget(card_with(self.list_title, self.list, margins=(12, 14, 12, 8)))
         v.addStretch(1)
 
         self.mode_seg.changed.connect(self._set_mode)
@@ -257,7 +285,7 @@ class ActivityPage(Page):
         self.refresh(True)
 
     def _open_day(self, index: int) -> None:
-        """A column in the week or month chart was clicked: open that day."""
+        """A bar in the week or month chart was clicked: open that day."""
         if self.mode == 0:
             return
         d0, _d1 = stats.period(self.mode, self.anchor)
@@ -277,7 +305,8 @@ class ActivityPage(Page):
             self.refresh(True)
 
     def enter(self) -> None:
-        self.number.replay()
+        for i, c in enumerate(self.cards):
+            c.replay(i * 70)
         self.chart.replay()
         self.list.replay()
 
@@ -289,34 +318,46 @@ class ActivityPage(Page):
         scope = SCOPES[self.scope_seg.index]
         d0, d1 = stats.period(self.mode, self.anchor)
 
-        self.period_lbl.setText(stats.period_label(self.mode, self.anchor))
+        self.period_lbl.setText(stats.period_label(self.mode, self.anchor).title() if self.mode != 2 else d0.strftime("%B %Y"))
         self.next_btn.setEnabled(d1 < today)
         self.today_btn.setVisible(d0 > today or d1 < today)
         self.back_btn.setVisible(self._back is not None)
         if self._back:
             text = "\u2190 Back to " + ("week" if self._back[0] == 1 else "month")
             self.back_btn.setText(text)
-            self.back_btn.setFixedWidth(QFontMetrics(T.sans(12)).horizontalAdvance(text) + 8)
+            self.back_btn.setFixedWidth(QFontMetrics(T.sans(13)).horizontalAdvance(text) + 8)
         self.hint.setVisible(self.mode != 0)
 
+        items = stats.breakdown(s, d0.isoformat(), d1.isoformat(), scope)
         if self.mode == 0:
             hours, _sh = stats.hourly_scope(s, d0.isoformat(), scope)
             self.chart.tips = [f"{h:02d}:00" for h in range(24)]
             self.chart.clickable = False
             self.chart.set_columns([(f"{h:02d}" if h % 3 == 0 else "", hours[h], d0 == today and h == now.hour) for h in range(24)], force)
             total = sum(hours)
-            self.caption.setText("IN TOTAL" if total < 60 else f"IN TOTAL  ·  BUSIEST AT {max(range(24), key=lambda h: hours[h]):02d}:00")
+            self.chart_title.set_title("Activity by hour")
+            self.c_mid.title = "Busiest hour"
+            peak = max(range(24), key=lambda h: hours[h])
+            self.c_mid.set_data(f"{peak:02d}:00" if total >= 60 else "\u2013", fmt_dur(hours[peak]) if total >= 60 else "No activity")
         else:
             tot, _shd = stats.daily_scope(s, d0, d1, scope)
             days = [d0 + timedelta(days=i) for i in range((d1 - d0).days + 1)]
-            label = (lambda d: d.strftime("%a").upper()) if self.mode == 1 else (lambda d: str(d.day) if d.day % 2 == 1 else "")
-            self.chart.tips = [d.strftime("%a %d %b").upper() for d in days]
+            label = (lambda d: d.strftime("%a")) if self.mode == 1 else (lambda d: str(d.day) if d.day % 2 == 1 else "")
+            self.chart.tips = [d.strftime("%a %d %b") for d in days]
             self.chart.clickable = True
             self.chart.set_columns([(label(d), tot.get(d.isoformat(), 0.0), d == today) for d in days], force)
             elapsed = [d for d in days if d <= today]
             total = sum(tot.get(d.isoformat(), 0.0) for d in elapsed)
-            self.caption.setText(f"IN TOTAL  ·  {dot_dur(total / max(1, len(elapsed)))} A DAY ON AVERAGE")
-        self.number.set_text(dot_dur(total))
+            self.chart_title.set_title("Activity by day")
+            self.c_mid.title = "Daily average"
+            self.c_mid.set_data(fmt_dur(total / max(1, len(elapsed))) if total >= 60 else "0m", "per day")
 
-        self.chart_head.set_title(("By hour", "By day", "By day")[self.mode])
-        self.list.set_items(stats.breakdown(s, d0.isoformat(), d1.isoformat(), scope)[:12], force)
+        self.c_total.set_data(fmt_dur(total) if total >= 60 else "0m", stats.period_label(self.mode, self.anchor).title())
+        noun = SCOPE_NOUN[scope]
+        self.c_top.title = f"Most used {noun}"
+        if items:
+            self.c_top.set_data(items[0].label, fmt_dur(items[0].seconds))
+        else:
+            self.c_top.set_data("Nothing yet", "No " + noun + " over a minute")
+        self.list_title.set_title("Breakdown")
+        self.list.set_items(items[:12], force)

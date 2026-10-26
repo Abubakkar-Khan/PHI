@@ -46,9 +46,9 @@ def _lerp_list(a: Sequence[float], b: Sequence[float], t: float) -> list[float]:
 
 # ---------------------------------------------------------------- panels
 class Panel(QWidget):
-    """A block of rows between two hairline rules."""
+    """A rounded card with a hairline border."""
 
-    def __init__(self, parent=None, radius: int = 14, fill: str | None = None, hoverable: bool = True):
+    def __init__(self, parent=None, radius: int = 16, fill: str | None = None, hoverable: bool = True):
         super().__init__(parent)
         self.radius, self.fill, self._hover = radius, fill or T.SURFACE, 0.0
         self._hoverable = hoverable
@@ -70,9 +70,10 @@ class Panel(QWidget):
 
     def paintEvent(self, _):
         p = QPainter(self)
-        line = T.mix(T.LINE, T.GRAY, self._hover * 0.5)
-        p.fillRect(QRectF(0, 0, self.width(), 1), line)
-        p.fillRect(QRectF(0, self.height() - 1, self.width(), 1), line)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p.setPen(QPen(T.mix(T.LINE, T.GRAY, self._hover * 0.5), 1))
+        p.setBrush(QColor(self.fill))
+        p.drawRoundedRect(QRectF(self.rect()).adjusted(.5, .5, -.5, -.5), self.radius, self.radius)
 
 
 class Hairline(QWidget):
@@ -152,7 +153,7 @@ class PillButton(QAbstractButton):
         p.setPen(QPen(border, 1) if border else Qt.PenStyle.NoPen)
         p.drawRoundedRect(r, r.height() / 2, r.height() / 2)
 
-        font = T.mono(12)
+        font = T.sans(13, T.QFont.Weight.Medium)
         fm = QFontMetrics(font)
         tw = fm.horizontalAdvance(self.text())
         iw = 26 if self.icon_name else 0
@@ -346,8 +347,8 @@ class Segmented(QWidget):
     def __init__(self, options: Sequence[str], parent=None):
         super().__init__(parent)
         self.options, self.index = list(options), 0
-        fm = QFontMetrics(T.mono(11, T.QFont.Weight.Medium, 0.8))
-        self._w = [fm.horizontalAdvance(o.upper()) + 26 for o in self.options]
+        fm = QFontMetrics(T.sans(13, T.QFont.Weight.Medium))
+        self._w = [fm.horizontalAdvance(o) + 30 for o in self.options]
         self.setFixedSize(sum(self._w) + 6, 32)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self._x, self._wd = 3.0, float(self._w[0])
@@ -394,7 +395,7 @@ class Segmented(QWidget):
         x = 3.0
         for i, o in enumerate(self.options):
             sel = clamp(1 - abs((x + self._w[i] / 2) - (self._x + self._wd / 2)) / (self._w[i] / 2 + 1))
-            label_font_paint(p, QRectF(x, 0, self._w[i], 32), o.upper(), T.mono(11, T.QFont.Weight.Medium, 0.8),
+            label_font_paint(p, QRectF(x, 0, self._w[i], 32), o, T.sans(13, T.QFont.Weight.Medium),
                              T.mix(T.GRAY, T.PAPER, sel), Qt.AlignmentFlag.AlignCenter)
             x += self._w[i]
 
@@ -428,7 +429,7 @@ class StatusChip(QWidget):
     def set_state(self, text: str, mode: str):
         if (text, mode) != (self._text, self._mode):
             self._text, self._mode = text, mode
-            fm = QFontMetrics(T.mono(10, spacing=1.2))
+            fm = QFontMetrics(T.sans(12))
             self.setFixedWidth(fm.horizontalAdvance(text) + 26)
             if mode != "off" and self.isVisible():
                 self._tk.wake()
@@ -451,115 +452,21 @@ class StatusChip(QWidget):
             p.setPen(Qt.PenStyle.NoPen)
             p.setBrush(color)
             p.drawEllipse(c, 3, 3)
-        label_font_paint(p, QRectF(20, 0, self.width() - 20, self.height()), self._text, T.mono(10, spacing=1.2), T.GRAY)
+        label_font_paint(p, QRectF(20, 0, self.width() - 20, self.height()), self._text, T.sans(12), T.GRAY)
 
 
-# ---------------------------------------------------------------- dot-matrix display
-_GLYPHS = {
-    "0": ["01110", "10001", "10011", "10101", "11001", "10001", "01110"],
-    "1": ["00100", "01100", "00100", "00100", "00100", "00100", "01110"],
-    "2": ["01110", "10001", "00001", "00010", "00100", "01000", "11111"],
-    "3": ["11110", "00001", "00001", "01110", "00001", "00001", "11110"],
-    "4": ["00010", "00110", "01010", "10010", "11111", "00010", "00010"],
-    "5": ["11111", "10000", "11110", "00001", "00001", "10001", "01110"],
-    "6": ["00110", "01000", "10000", "11110", "10001", "10001", "01110"],
-    "7": ["11111", "00001", "00010", "00100", "01000", "01000", "01000"],
-    "8": ["01110", "10001", "10001", "01110", "10001", "10001", "01110"],
-    "9": ["01110", "10001", "10001", "01111", "00001", "00010", "01100"],
-    "H": ["10001", "10001", "10001", "11111", "10001", "10001", "10001"],
-    "M": ["10001", "11011", "10101", "10101", "10001", "10001", "10001"],
-    "S": ["01111", "10000", "10000", "01110", "00001", "00001", "11110"],
-    ":": ["0", "1", "0", "0", "0", "1", "0"],
-    "-": ["000", "000", "000", "111", "000", "000", "000"],
-    " ": ["000"] * 7,
-    "_": ["00000"] * 6 + ["11111"],
-}
+# ---------------------------------------------------------------- bar chart
+def _nice_max(seconds: float) -> float:
+    """Round a maximum up to a tidy axis value (10m, 20m, 30m, 1h, 2h ...)."""
+    mins = seconds / 60.0
+    for n in (5, 10, 15, 20, 30, 45, 60, 90, 120, 180, 240, 300, 360, 480, 600, 720, 960, 1200):
+        if mins <= n:
+            return n * 60.0
+    return float(int(mins / 600 + 1) * 600 * 60)
 
 
-class DotNumber(QWidget):
-    """A number on a dot-matrix display. New text scans in from the left; a red cursor blinks after it."""
-
-    def __init__(self, text: str = "", dot: float = 5.0, cursor: bool = True, parent=None):
-        super().__init__(parent)
-        self._dot, self._cursor = dot, cursor
-        self._text = ""
-        self._cells: list[tuple[int, int, bool]] = []     # (col, row, lit)
-        self._cols = 1
-        self._reveal = 1.0
-        self._on = True
-        self._anim = animator(self, self._set_reveal, 800, QEasingCurve.Type.InOutCubic)
-        self._blink = QTimer(self)
-        self._blink.setInterval(560)
-        self._blink.timeout.connect(self._toggle)
-        self.set_text(text)
-
-    def _toggle(self):
-        self._on = not self._on
-        self.update()
-
-    def _set_reveal(self, v):
-        self._reveal = v
-        self.update()
-
-    def showEvent(self, e):
-        if self._cursor:
-            self._blink.start()
-        super().showEvent(e)
-
-    def hideEvent(self, e):
-        self._blink.stop()
-        super().hideEvent(e)
-
-    def set_text(self, text: str, animate: bool = True) -> None:
-        text = text.upper()
-        if text == self._text:
-            return
-        self._text = text
-        cells, col = [], 0
-        for ch in text:
-            g = _GLYPHS.get(ch, _GLYPHS[" "])
-            for r, row in enumerate(g):
-                for c, v in enumerate(row):
-                    cells.append((col + c, r, v == "1"))
-            col += len(g[0]) + 1
-        self._cells = cells
-        self._cols = max(1, col)
-        step = self._dot * 2.1
-        self.setFixedSize(int((self._cols + (6 if self._cursor else 0)) * step), int(7 * step))
-        if animate:
-            run(self._anim, 0, 1)
-        else:
-            self._reveal = 1.0
-        self.update()
-
-    def replay(self) -> None:
-        run(self._anim, 0, 1)
-
-    def paintEvent(self, _):
-        p = QPainter(self)
-        p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        p.setPen(Qt.PenStyle.NoPen)
-        step, rad = self._dot * 2.1, self._dot * 0.5
-        edge = self._reveal * (self._cols + 3)
-        for c, r, lit in self._cells:
-            x, y = c * step + step / 2, r * step + step / 2
-            if lit and c <= edge:
-                p.setBrush(QColor(T.INK))
-                near = edge - c
-                size = rad * (1.0 if near > 2 else 0.55 + near * 0.22)
-            else:
-                p.setBrush(QColor(T.CELL))
-                size = rad * 0.55
-            p.drawEllipse(QPointF(x, y), size, size)
-        if self._cursor and self._on:
-            p.setBrush(QColor(T.RED))
-            x0 = (self._cols + 0.5) * step
-            for c in range(5):
-                p.drawEllipse(QPointF(x0 + c * step + step / 2, 6 * step + step / 2), rad, rad)
-
-
-class DotChart(QWidget):
-    """Columns built from dots. Dark on hover, a red dot crowns the current one, clicking can open it."""
+class BarChart(QWidget):
+    """Rounded bars with two light gridlines and a readable axis. The current bar is dark; hover reads a value."""
     clicked = Signal(int)
 
     def __init__(self, parent=None):
@@ -569,9 +476,11 @@ class DotChart(QWidget):
         self.clickable = False
         self._hover = -1
         self._grow = 1.0
-        self._anim = animator(self, self._set_grow, 900, QEasingCurve.Type.OutCubic)
+        self._anim = animator(self, self._set_grow, 750, QEasingCurve.Type.OutCubic)
         self.setMouseTracking(True)
-        self.setMinimumHeight(170)
+        self.setMinimumHeight(190)
+
+    LEFT, TOP, BOTTOM = 46, 14, 26
 
     def _set_grow(self, v):
         self._grow = v
@@ -588,10 +497,10 @@ class DotChart(QWidget):
         run(self._anim, 0, 1)
 
     def _slot(self) -> float:
-        return self.width() / max(1, len(self.cols))
+        return (self.width() - self.LEFT) / max(1, len(self.cols))
 
     def mouseMoveEvent(self, e):
-        i = int(e.position().x() // self._slot()) if self.cols else -1
+        i = int((e.position().x() - self.LEFT) // self._slot()) if self.cols else -1
         i = i if 0 <= i < len(self.cols) else -1
         if i != self._hover:
             self._hover = i
@@ -610,62 +519,107 @@ class DotChart(QWidget):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         slot = self._slot()
-        label_h, top = 22, 28
-        base = self.height() - label_h
-        d = max(4.0, min(slot * 0.30, 8.0))              # dot diameter
-        gap = d * 0.62
-        step = d + gap
-        max_dots = max(1, int((base - top) // step))
-        mx = max([c[1] for c in self.cols] + [1.0])
-        per_row = 2 if slot >= 20 else 1
-        p.setPen(Qt.PenStyle.NoPen)
+        base = self.height() - self.BOTTOM
+        usable = max(10.0, base - self.TOP)
+        peak = _nice_max(max([c[1] for c in self.cols] + [60.0]))
+        # gridlines
+        for frac in (0.5, 1.0):
+            y = base - usable * frac
+            p.setPen(QPen(QColor(T.LINE), 1))
+            p.drawLine(QPointF(self.LEFT, y), QPointF(self.width(), y))
+            label_font_paint(p, QRectF(0, y - 8, self.LEFT - 8, 16), fmt_dur(peak * frac), T.sans(11), T.GRAY,
+                             Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        p.setPen(QPen(QColor(T.EDGE), 1))
+        p.drawLine(QPointF(self.LEFT, base), QPointF(self.width(), base))
+        bw = max(4.0, min(slot * 0.58, 30.0))
         for i, (label, secs, hi) in enumerate(self.cols):
-            n = int(round(max_dots * secs / mx)) if secs > 0 else 0
+            h = usable * min(1.0, secs / peak) * self._grow
+            x = self.LEFT + i * slot + (slot - bw) / 2
+            p.setPen(Qt.PenStyle.NoPen)
             if secs > 0:
-                n = max(1, n)
-            shown = int(n * clamp(self._grow * 1.25 - i * 0.012))
-            x0 = i * slot + (slot - (per_row * d + (per_row - 1) * gap)) / 2
-            on = i == self._hover
-            p.setPen(Qt.PenStyle.NoPen)                    # the label text below leaves its pen active
-            for k in range(max(shown, 0)):
-                y = base - d - k * step
-                top_dot = k == n - 1
-                col = QColor(T.INK) if (hi or on) else QColor(T.BAR)
-                if hi and top_dot:
-                    col = QColor(T.RED)
-                p.setBrush(col)
-                for c in range(per_row):
-                    p.drawEllipse(QRectF(x0 + c * step, y, d, d))
-            if n == 0:
-                p.setBrush(QColor(T.CELL))
-                for c in range(per_row):
-                    p.drawEllipse(QRectF(x0 + c * step, base - d, d, d))
+                p.setBrush(QColor(T.INK) if (hi or i == self._hover) else QColor(T.BAR))
+                p.drawRoundedRect(QRectF(x, base - max(h, 3.0), bw, max(h, 3.0)), min(6.0, bw / 2), min(6.0, bw / 2))
             if label:
-                label_font_paint(p, QRectF(i * slot - 8, base + 6, slot + 16, 14), label, T.mono(9, spacing=.6),
+                label_font_paint(p, QRectF(self.LEFT + i * slot - 10, base + 6, slot + 20, 16), label, T.sans(11),
                                  T.INK if hi else T.GRAY, Qt.AlignmentFlag.AlignCenter)
         if 0 <= self._hover < len(self.cols):
             i = self._hover
             tip = f"{self.tips[i]}  \u00b7  " if i < len(self.tips) and self.tips[i] else ""
             txt = tip + fmt_dur(self.cols[i][1])
-            font = T.mono(10, T.QFont.Weight.Medium)
-            w = QFontMetrics(font).horizontalAdvance(txt) + 18
-            bx = clamp(i * slot + slot / 2 - w / 2, 0.0, self.width() - w)
+            font = T.sans(12, T.QFont.Weight.Medium)
+            w = QFontMetrics(font).horizontalAdvance(txt) + 20
+            bx = clamp(self.LEFT + i * slot + slot / 2 - w / 2, self.LEFT, self.width() - w)
+            h = usable * min(1.0, self.cols[i][1] / peak) * self._grow
+            by = max(0.0, base - max(h, 3.0) - 34)
+            p.setPen(Qt.PenStyle.NoPen)
             p.setBrush(QColor(T.INK))
-            p.drawRoundedRect(QRectF(bx, 0, w, 22), 8, 8)
-            label_font_paint(p, QRectF(bx, 0, w, 22), txt, font, T.PAPER, Qt.AlignmentFlag.AlignCenter)
+            p.drawRoundedRect(QRectF(bx, by, w, 26), 8, 8)
+            label_font_paint(p, QRectF(bx, by, w, 26), txt, font, T.PAPER, Qt.AlignmentFlag.AlignCenter)
+
+
+# ---------------------------------------------------------------- stat card
+class StatCard(Panel):
+    """A small card: title, one big value, a caption, and optionally a 7-day mini chart."""
+
+    def __init__(self, title: str, parent=None):
+        super().__init__(parent, hoverable=True)
+        self.title, self.value, self.sub = title, "", ""
+        self.sub_color: str | None = None
+        self.series: list[float] = []
+        self._grow = 1.0
+        self.setMinimumHeight(128)
+        self._anim = animator(self, self._set_grow, 700, QEasingCurve.Type.OutCubic)
+
+    def _set_grow(self, v):
+        self._grow = v
+        self.update()
+
+    def set_data(self, value: str, sub: str, series: list[float] | None = None, sub_color: str | None = None) -> None:
+        changed = (value, sub, series or []) != (self.value, self.sub, self.series)
+        self.value, self.sub, self.sub_color, self.series = value, sub, sub_color, list(series or [])
+        if changed:
+            self.update()
+
+    def replay(self, delay: int = 0) -> None:
+        QTimer.singleShot(max(0, delay), lambda: run(self._anim, 0, 1))
+
+    def paintEvent(self, e):
+        super().paintEvent(e)
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        w, h = self.width(), self.height()
+        label_font_paint(p, QRectF(20, 16, w - 40, 18), self.title, T.sans(13, T.QFont.Weight.Medium), T.GRAY)
+        room = w - 40 - (84 if self.series else 0)
+        font = T.sans(34, T.QFont.Weight.Medium)
+        fm = QFontMetrics(font)
+        while fm.horizontalAdvance(self.value) > room and font.pixelSize() > 16:
+            font.setPixelSize(font.pixelSize() - 2)
+            fm = QFontMetrics(font)
+        label_font_paint(p, QRectF(20, 40, room, 48), self.value, font, T.INK)
+        label_font_paint(p, QRectF(20, h - 34, w - 40, 20), self.sub, T.sans(12), self.sub_color or T.GRAY)
+        if self.series:
+            mx = max(self.series) or 1.0
+            bw, gap = 7, 4
+            x0 = w - 20 - len(self.series) * (bw + gap) + gap
+            base = h - 42
+            p.setPen(Qt.PenStyle.NoPen)
+            for i, v in enumerate(self.series):
+                bh = max(3.0, 40 * (v / mx) * clamp(self._grow * 1.3 - i * 0.05))
+                p.setBrush(QColor(T.INK) if i == len(self.series) - 1 else QColor(T.BAR))
+                p.drawRoundedRect(QRectF(x0 + i * (bw + gap), base - bh, bw, bh), 2.5, 2.5)
 
 
 # ---------------------------------------------------------------- list row
 class ItemRow(QWidget):
-    """01  Name  ...dots...  1h 07m. The dots show the share; the last lit one is red."""
+    """Letter tile, name, a thin share bar, and the time."""
 
     def __init__(self, name: str, seconds: float, share: float, last: bool = False, delay: int = 0, index: int = 1, parent=None):
         super().__init__(parent)
-        self.name, self.seconds, self.share, self.last, self.index = name, seconds, share, last, index
+        self.name, self.seconds, self.share, self.last = name, seconds, share, last
         self._from = (seconds, share)
         self._u, self._fill, self._hover = 1.0, 0.0, 0.0
-        self.setFixedHeight(54)
-        self._anim = animator(self, self._set_fill, 800, QEasingCurve.Type.OutCubic)
+        self.setFixedHeight(62)
+        self._anim = animator(self, self._set_fill, 700, QEasingCurve.Type.OutCubic)
         self._upd = animator(self, self._set_u, 420)
         self._h = animator(self, self._set_hover, 140)
         self._delay = QTimer(self)
@@ -715,53 +669,45 @@ class ItemRow(QWidget):
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         w, h = self.width(), self.height()
         seconds, share = self.shown()
-        label_font_paint(p, QRectF(0, 0, 40, h), f"{self.index:02d}", T.mono(11, T.QFont.Weight.Medium),
-                         T.mix(T.GRAY, T.RED, self._hover), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-        label_font_paint(p, QRectF(44, 0, w * 0.34, h), self.name, T.sans(16, T.QFont.Weight.Medium), T.INK)
-        x0, x1 = 44 + w * 0.34 + 10, w - 130
-        n = max(8, int((x1 - x0) // 9))
-        lit = int(round(n * clamp(share) * self._fill))
+        if self._hover > 0.01:
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(T.qc(T.SOFT, self._hover * .6))
+            p.drawRoundedRect(QRectF(6, 3, w - 12, h - 6), 12, 12)
+        tile = QRectF(20, (h - 38) / 2, 38, 38)
         p.setPen(Qt.PenStyle.NoPen)
-        for i in range(n):
-            if i < lit:
-                p.setBrush(QColor(T.RED if i == lit - 1 else T.INK))
-                r = 2.6
-            else:
-                p.setBrush(QColor(T.CELL))
-                r = 1.8
-            p.drawEllipse(QPointF(x0 + i * ((x1 - x0) / n) + 3, h / 2), r, r)
-        label_font_paint(p, QRectF(w - 120, 0, 120, h), fmt_dur(seconds), T.mono(14, T.QFont.Weight.Medium), T.INK,
+        p.setBrush(QColor(T.SOFT))
+        p.drawRoundedRect(tile, 11, 11)
+        label_font_paint(p, tile, self.name[:1].upper(), T.sans(16, T.QFont.Weight.Medium), T.INK, Qt.AlignmentFlag.AlignCenter)
+        label_font_paint(p, QRectF(72, 9, w - 200, 24), self.name, T.sans(15, T.QFont.Weight.Medium), T.INK)
+        track = QRectF(72, 38, max(40.0, w - 72 - 130), 5)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QColor(T.CELL))
+        p.drawRoundedRect(track, 2.5, 2.5)
+        p.setBrush(QColor(T.INK))
+        p.drawRoundedRect(QRectF(track.left(), track.top(), max(5.0, track.width() * clamp(share) * self._fill), 5), 2.5, 2.5)
+        label_font_paint(p, QRectF(w - 128, 0, 108, h), fmt_dur(seconds), T.sans(15, T.QFont.Weight.Medium), T.INK,
                          Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         if not self.last:
-            p.fillRect(QRectF(0, h - 1, w, 1), QColor(T.LINE))
+            p.fillRect(QRectF(72, h - 1, w - 92, 1), QColor(T.LINE))
 
 
-# ---------------------------------------------------------------- section heading
-class SectionHead(QWidget):
-    """01  WHEN ............................ [optional control]"""
+# ---------------------------------------------------------------- section title
+class SectionTitle(QWidget):
+    """A plain heading with an optional control on the right."""
 
-    def __init__(self, index: int, title: str, right: QWidget | None = None, parent=None):
+    def __init__(self, title: str, right: QWidget | None = None, parent=None):
         super().__init__(parent)
         from PySide6.QtWidgets import QHBoxLayout, QLabel
-        self.setFixedHeight(36)
+        self.setFixedHeight(40)
         lay = QHBoxLayout(self)
-        lay.setContentsMargins(0, 0, 0, 6)
-        lay.setSpacing(12)
-        labels = []
-        for text, font, color in ((f"{index:02d}", T.mono(11, T.QFont.Weight.Bold), T.RED),
-                                  (title.upper(), T.mono(11, T.QFont.Weight.Medium, 1.6), T.INK)):
-            lb = QLabel(text)
-            lb.setFont(font)
-            lb.setStyleSheet(f"color:{color}; background:transparent;")
-            lay.addWidget(lb)
-            labels.append(lb)
-        self.title_lbl = labels[1]
+        lay.setContentsMargins(2, 0, 0, 0)
+        self.title_lbl = QLabel(title)
+        self.title_lbl.setFont(T.sans(17, T.QFont.Weight.Medium))
+        self.title_lbl.setStyleSheet(f"color:{T.INK}; background:transparent;")
+        lay.addWidget(self.title_lbl)
         lay.addStretch(1)
         if right is not None:
             lay.addWidget(right)
 
     def set_title(self, title: str) -> None:
-        self.title_lbl.setText(title.upper())
-
-    def paintEvent(self, _):
-        QPainter(self).fillRect(QRectF(0, self.height() - 1, self.width(), 1), QColor(T.INK))
+        self.title_lbl.setText(title)
