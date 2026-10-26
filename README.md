@@ -181,7 +181,7 @@ PHI trusts the live address bar first. The extension heartbeat (every 4 s) is on
 ```mermaid
 flowchart TD
     A["Tick: foreground window"] --> B{"Is it a browser?"}
-    B -->|No| APP["Count time for the app"]
+    B -->|No| APP["Count the app<br/>+ screen time"]
     B -->|Yes| C{"Fresh address-bar read<br/>for this window?"}
     C -->|Yes| SRC["Use host + Shorts flag"]
     C -->|No| D{"Extension heartbeat<br/>fresh and tab active?"}
@@ -191,16 +191,19 @@ flowchart TD
     P -->|Yes| APP
     P -->|No| X{"Excluded site?"}
     X -->|Yes| SKIP["Not recorded"]
-    X -->|No| H{"youtube.com/shorts/...?"}
-    H -->|Yes| SH["State: shorts<br/>count Shorts time"]
-    H -->|No| SITE["Count site time<br/>check watched-site limit"]
+    X -->|No| BOTH["Count the browser app<br/>+ the site + screen time"]
+    BOTH --> H{"youtube.com/shorts/...?"}
+    H -->|Yes| SH["State: shorts<br/>also count Shorts time"]
+    H -->|No| SITE["Check the site's limit"]
 ```
 
 Time is only counted while there was input in the last `idle_threshold_s` seconds, or while the tab is playing audio. Clock jumps and sleep/resume are not counted.
 
 **Sessions.** A Shorts session is continuous time on Shorts. Leaving Shorts for more than 4 seconds ends it, so closing Shorts and reopening it is a fresh check and triggers again straight away (with the session limit at `0`, as soon as it opens). "More time" only covers the session you are in.
 
-Private windows are never read as a site: their time is counted only as time in the browser app, with no hostname.
+**How time is counted.** Every active second is added to screen time once. If "Track apps" is on, it is also added to the app in focus, and when that app is a browser showing a readable site, to the site as well. A site is inside its browser, so browsing Google in Brave adds the same seconds to **Brave** and to **Google** (and once to screen time). Compare apps with apps and sites with sites; do not add the two lists together. An app limit on a browser therefore counts the time you spend on its sites too.
+
+Private windows are never read as a site: their time is counted only for the browser app, with no hostname.
 
 Every navigation and every Short swipe changes the browser's window title. PHI watches the title (it is never stored) and uses a change as a signal to re-read the address bar immediately.
 
@@ -427,13 +430,13 @@ The tables are independent on purpose. `usage` and `events` only share the `day`
 | `pause_min` | `60` | Length of "pause reminders" |
 | `bypass_min` | `30` | Length of "I'm using it for something important" |
 | `idle_threshold_s` | `120` | No input for this long counts as away |
-| `track_apps` | `true` | Record desktop apps, not just sites |
+| `track_apps` | `true` | Record the app in focus, browsers included, alongside any site inside it |
 | `autostart` | `true` | Start with Windows (per-user Run key, no admin) |
 | `retention_days` | `90` | Older days are deleted automatically |
 | `watched_sites` | Instagram and Reddit on (15 min), TikTok, X and YouTube off | Per-website daily limits. The `youtube.com` entry counts YouTube **without Shorts** |
 | `watched_apps` | none | Per-app daily limits, as `{exe, limit, enabled}`. When one is reached the app is **minimized**, never closed |
 | `excluded_sites` | none | Sites that are never recorded |
-| `hidden_items` | none | Apps/websites hidden from Today and Activity (hover a row and click the eye, or right-click). Display only: lists, charts and totals leave them out, data and limits are untouched. Undo right after, or review under Settings > General > Privacy |
+| `hidden_items` | none | Apps/websites hidden from Today and Activity (hover a row and click the eye, or right-click). Display only: lists, charts and totals leave them out, data and limits are untouched. Undo is offered right after hiding |
 | `theme_mode` | `light` | `light`, `dark` or `custom` |
 | `theme_bg`, `theme_text`, `theme_accent` | `#F0EFEB`, `#171717`, `#E53935` | The three colours used by the custom theme |
 | `reminder_items` | one "Take a break" every 30 min, off | List of timers and alarms: `id`, `message`, `mode` (`interval` or `daily`), `every_min`, `time`, `enabled`, `sound` |
@@ -601,7 +604,7 @@ flowchart TD
 
 - Keystrokes, mouse activity, screenshots or screen recordings.
 - Full URLs, page paths, page titles or page content.
-- The sites you visit in private or incognito windows. Those windows count only as time in the browser app.
+- The sites you visit in private or incognito windows. Those windows count only for the browser app.
 - Anything over the network. The only socket is the local one for the extension.
 
 **How the address-bar reader stays private.** It reads the address bar in memory, keeps the hostname, a Shorts flag and a private-window flag, and discards the rest. The window title is used only as a "something changed" signal and is never stored or logged.

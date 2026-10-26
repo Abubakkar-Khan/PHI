@@ -88,7 +88,7 @@ class ItemList(QWidget):
         if not self.on_hide:
             return
         self._undo_item = it
-        self._toast_lbl.setText(f"\u201c{it.label}\u201d is hidden. Manage it in Settings \u203a General.")
+        self._toast_lbl.setText(f"\u201c{it.label}\u201d is hidden.")
         self._toast.show()
         self._timer.start(6000)
         self.on_hide(it)
