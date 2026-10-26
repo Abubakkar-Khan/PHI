@@ -128,6 +128,8 @@ def main(argv: list[str] | None = None) -> int:
     cfg.subscribe(lambda k: store.purge_older_than(cfg.get("retention_days")) if k == "retention_days" else None)
     autostart.set_enabled(bool(cfg.get("autostart")))
     T.apply_settings(cfg)
+    mascot_module.set_variant(cfg.get("character"))
+    app.setWindowIcon(ghost_icon())
     app.setStyleSheet(T.qss())
 
     bridge = Bridge()
@@ -147,7 +149,11 @@ def main(argv: list[str] | None = None) -> int:
 
     def on_theme_change(key: str) -> None:
         """Light / dark / custom: swap the tokens, then rebuild the window. Popups pick it up when they appear."""
-        if key not in T.THEME_KEYS:
+        if key == "character":
+            mascot_module.set_variant(cfg.get("character"))
+            app.setWindowIcon(ghost_icon())
+            window.setWindowIcon(ghost_icon())
+        elif key not in T.THEME_KEYS:
             return
         T.apply_settings(cfg)
         mascot_module._layers.cache_clear()

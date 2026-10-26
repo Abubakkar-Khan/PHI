@@ -218,11 +218,11 @@ class Engine(QObject):
                 self._status = "shorts" if shorts else "active"
                 label = pretty_site(site) if site else pretty_app(fg.exe)
                 if dt > 0:
-                    self._add(hour, "total", "*", dt)
+                    self._add(hour, "total", "*", dt)                       # screen time: counted once
+                    if self.cfg.get("track_apps"):
+                        self._add(hour, "app", fg.exe.lower(), dt)           # the app in focus, a browser included
                     if site:
-                        self._add(hour, "site", site, dt)
-                    elif self.cfg.get("track_apps"):
-                        self._add(hour, "app", fg.exe.lower(), dt)
+                        self._add(hour, "site", site, dt)                    # and the site inside it
                     if shorts:
                         self._add(hour, "shorts", "youtube", dt)
                         self._count_swipes(hb, hour)
@@ -231,8 +231,9 @@ class Engine(QObject):
                     self._on_shorts(now, dt)
                 elif site:
                     self._check_site(site, label)
-                else:
-                    self._check_app(exe, fg.hwnd)
+                # Browser time now includes the sites inside it, so an app limit (say on Brave) must also be
+                # checked while you are on a site. Only one nudge can be open at a time, so this never doubles up.
+                self._check_app(exe, fg.hwnd)
 
         rs = self.reader.status if (self.reader and fg and fg.exe.lower() in BROWSERS) else None
         if rs and rs != getattr(self, "_last_rs", None):

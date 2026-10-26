@@ -1,4 +1,4 @@
-"""PHI's companion: a pixel-art nerd with wild hair, big square glasses and one orange plus.
+"""PHI's companion: a cool pixel-art nerd (four looks) with big square glasses and one orange plus.
 
 How it stays smooth and cheap
 - The sprite is five layers (skin, outline, hair, glasses, antennae) pre-rendered once per scale, then
@@ -99,10 +99,102 @@ def _build() -> dict[str, list[list[str]]]:
             glasses[r][x0] = glasses[r][x1] = "#"
     _span(glasses, 27, (21, 22))
     _span(glasses, 28, (21, 22))
+
+    # --- cool: heavy upper lids that slope toward the nose, and a raised brow
+    for x0, x1, outer in ((10, 20, (11, 16)), (23, 33, (27, 32))):
+        _span(glasses, 25, (x0 + 1, x1 - 1))
+        _span(glasses, 26, outer)
+    _span(glasses, 22, (25, 31))
+    _span(glasses, 21, (32, 33))
     return {"skin": skin, "line": line, "hair": hair, "glasses": glasses}
 
 
-_SPRITE = _build()
+def _hair_mia(base) -> list[list[str]]:
+    """Bob with a side-swept fringe; the sides fall past the jaw."""
+    g = _grid()
+    for r in range(4, 16):
+        for c in range(SW):
+            if base[r][c] != ".":
+                g[r][c] = base[r][c]
+    fringe = {16: [(3, 41)], 17: [(3, 34), (37, 40)], 18: [(3, 30), (37, 40)], 19: [(3, 25), (37, 40)],
+              20: [(3, 20), (37, 40)], 21: [(3, 15), (37, 40)], 22: [(3, 10), (37, 40)]}
+    for r, runs in fringe.items():
+        _span(g, r, *runs)
+    for r in range(23, 36):
+        _span(g, r, (3, 6), (37, 40))
+    _span(g, 36, (4, 6), (37, 39))
+    _span(g, 37, (4, 6), (37, 39))
+    _span(g, 38, (5, 7), (36, 38))
+    for r, (a, b) in {8: (13, 17), 9: (11, 14), 10: (10, 12), 8 + 20: (4, 4)}.items():
+        _span(g, r, (a, b), ch="g")
+    _span(g, 9, (28, 31), ch="g")
+    return g
+
+
+def _hair_curly() -> list[list[str]]:
+    """A big round cloud of curls."""
+    g = _grid()
+    for r in range(3, 18):
+        t = (r - 13) / 10.5
+        w = 19.5 * math.sqrt(max(0.0, 1 - t * t))
+        wob = 1 if (r // 2) % 2 == 0 else 0                    # scalloped edge: curls
+        a, b = max(0, round(21.5 - w) - wob), min(SW - 1, round(21.5 + w) - 1 + wob)
+        _span(g, r, (a, b))
+    for r in range(18, 28):
+        k = (r - 18) // 3
+        _span(g, r, (4 + k, 8), (35, 39 - k))
+    for r, c in ((6, 15), (8, 21), (9, 28), (10, 12), (11, 34), (12, 20), (13, 8), (14, 26), (13, 37), (5, 22), (15, 16)):
+        _span(g, r, (c, c + 1), ch="g")
+    return g
+
+
+def _hair_beanie() -> list[list[str]]:
+    """A knitted cap (accent colour) with a ribbed brim and a short fringe."""
+    g = _grid()
+    dome = {3: (16, 27), 4: (13, 30), 5: (11, 32), 6: (9, 34), 7: (8, 35), 8: (7, 36), 9: (6, 37),
+            10: (6, 37), 11: (5, 38), 12: (5, 38), 13: (5, 38)}
+    for r, (a, b) in dome.items():
+        _span(g, r, (a, b), ch="r")
+    for r in (14, 15, 16):
+        for c in range(4, 40):
+            g[r][c] = "d" if (c % 2 == 0) else "r"
+    for r, runs in {17: [(7, 20), (30, 36)], 18: [(8, 16), (31, 35)], 19: [(7, 8), (35, 36)],
+                    20: [(7, 7), (36, 36)]}.items():
+        _span(g, r, *runs)
+    for r in range(21, 27):
+        _span(g, r, (7, 8), (35, 36))
+    for r, c in ((6, 14), (7, 13), (8, 12), (9, 11)):
+        g[r][c] = "w"                      # a light knit highlight
+    return g
+
+
+VARIANTS = {"classic": "Phi", "mia": "Mia", "curly": "Curly", "beanie": "Beanie"}
+VARIANT = "classic"
+
+
+def set_variant(name: str) -> None:
+    """Pick which character every Mascot and icon draws."""
+    global VARIANT
+    VARIANT = name if name in VARIANTS else "classic"
+    _layers.cache_clear()
+
+
+@lru_cache(maxsize=8)
+def _sprite(variant: str) -> dict[str, list[list[str]]]:
+    s = _build()
+    if variant == "mia":
+        s["hair"] = _hair_mia(s["hair"])
+        gl = s["glasses"]
+        for r, c in ((24, 9), (23, 8), (24, 34), (23, 35)):      # lash flicks at the outer corners
+            gl[r][c] = "#"
+        _span(gl, 22, (12, 18))                                    # brow on the left too
+    elif variant == "curly":
+        s["hair"] = _hair_curly()
+        _span(s["glasses"], 22, (12, 18))
+    elif variant == "beanie":
+        s["hair"] = _hair_beanie()
+        _span(s["glasses"], 22, (12, 18))
+    return s
 
 # antennae are drawn cell by cell so they can bend: (row, col)
 _STRANDS = [(0, 25), (0, 26), (0, 27), (1, 27), (1, 28), (2, 28), (2, 29), (3, 29), (4, 30), (5, 31), (6, 32),
@@ -112,15 +204,18 @@ _STRAND_BASE = 10
 
 
 @lru_cache(maxsize=24)
-def _layers(cell_dev: int, ratio: float, fill: str) -> dict[str, QPixmap]:
+def _layers(cell_dev: int, ratio: float, fill: str, variant: str = "classic") -> dict[str, QPixmap]:
     """Pre-render each layer at an integer number of device pixels per cell (so cell edges never blur)."""
-    plan = (("skin", {"#": fill}), ("line", {"#": T.INK}), ("hair", {"#": T.INK, "g": HI}), ("glasses", {"#": T.INK}))
+    accent = T.RED
+    hair_colors = {"#": T.INK, "g": HI, "r": accent, "d": T.mix(accent, T.INK, 0.35), "w": T.mix(accent, "#FFFFFF", 0.4)}
+    plan = (("skin", {"#": fill}), ("line", {"#": T.INK}), ("hair", hair_colors), ("glasses", {"#": T.INK}))
+    sprite = _sprite(variant)
     out: dict[str, QPixmap] = {}
     for name, colors in plan:
         img = QImage(SW * cell_dev, SH * cell_dev, QImage.Format.Format_ARGB32_Premultiplied)
         img.fill(Qt.GlobalColor.transparent)
         q = QPainter(img)
-        for r, row in enumerate(_SPRITE[name]):
+        for r, row in enumerate(sprite[name]):
             c = 0
             while c < SW:
                 ch = row[c]
@@ -150,13 +245,13 @@ class Pose:
     glass_dy: float = 0.0
     shear: float = 0.0         # antenna bend
     eyes: str = "open"         # open | happy | closed | x
-    eye_w: float = 2.0
-    eye_h: float = 4.0
+    eye_w: float = 2.6
+    eye_h: float = 3.0
     eye_bottom: float = EYE_BOTTOM
     lx: float = 0.0            # where the eyes are looking, cells
     ly: float = 0.0
     mouth: str = "flat"        # flat | smile | grin | o | worried | yawn | snore
-    blush: float = 0.4
+    blush: float = 0.0
     plus_k: float = 1.0
     plus_color: str = T.ORANGE
     plus_dy: float = 0.0
@@ -170,19 +265,19 @@ class Pose:
     @staticmethod
     def static(mood: str) -> "Pose":
         if mood == "alert":
-            return Pose(eye_w=3.0, eye_h=5.6, eye_bottom=32.0, mouth="o", plus_color=T.RED, bang=1.0, hair_dy=-1.0, shear=-0.05)
+            return Pose(eye_w=3.2, eye_h=5.2, eye_bottom=32.0, mouth="o", plus_color=T.RED, bang=1.0, hair_dy=-1.0, shear=-0.05)
         if mood == "celebrate":
             return Pose(eyes="happy", mouth="grin", blush=1.0, plus_k=1.3)
         if mood == "sleep":
             return Pose(eyes="closed", mouth="snore", plus_color="#B9B7B0", plus_k=0.8, dy=0.9, glass_dy=0.5)
         if mood == "idle":
-            return Pose(eye_h=3.0)
+            return Pose(eye_h=2.2)
         return Pose()
 
 
 def paint_pose(p: QPainter, pose: Pose, px: float, dpr: float, fill: str) -> None:
     cell_dev = max(1, round(px * dpr))
-    L = _layers(cell_dev, cell_dev / px, fill)
+    L = _layers(cell_dev, cell_dev / px, fill, VARIANT)
     p.setRenderHint(QPainter.RenderHint.Antialiasing, False)
     p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, False)
     ink = QColor(T.INK)
@@ -223,11 +318,20 @@ def paint_pose(p: QPainter, pose: Pose, px: float, dpr: float, fill: str) -> Non
             if k > 0.05:
                 rect(x, gy, 1, 1, T.mix(T.INK, GLINT, k))
 
-    # eyes: tall slit pupils inside the lenses
+    # lenses: a faint cool tint and a little shine
+    for x0 in (10, 23):
+        rect(x0 + 1, 27 + pose.glass_dy, 9, 7, QColor(110, 165, 225, 38))
+        rect(x0 + 2, 28 + pose.glass_dy, 1, 2, QColor(255, 255, 255, 190))
+        rect(x0 + 3, 28 + pose.glass_dy, 1, 1, QColor(255, 255, 255, 190))
+
+    # eyes: calm pupils under heavy lids, each with a catch-light
     for c0 in (EYE_L, EYE_R):
         ex = c0 + pose.lx
         if pose.eyes == "open":
-            rect(ex - pose.eye_w / 2, pose.eye_bottom + pose.ly - pose.eye_h, pose.eye_w, pose.eye_h, ink)
+            top = pose.eye_bottom + pose.ly - pose.eye_h
+            rect(ex - pose.eye_w / 2, top, pose.eye_w, pose.eye_h, ink)
+            if pose.eye_h >= 2.4:
+                rect(ex - pose.eye_w / 2 + 0.4, top + 0.4, 0.9, 0.9, QColor(fill))
         elif pose.eyes == "happy":
             rect(c0 - 1.0, 28.0, 2.0, 1.0, ink)
             rect(c0 - 2.0, 29.0, 1.0, 1.0, ink)
@@ -240,28 +344,32 @@ def paint_pose(p: QPainter, pose: Pose, px: float, dpr: float, fill: str) -> Non
 
     # mouth: a tiny mark under the bridge
     m = pose.mouth
-    if m == "flat":
-        rect(20.5, 36.0, 2.0, 0.8, ink)
+    mcol = QColor("#D6405A") if VARIANT == "mia" else ink      # Mia wears lipstick
+    if m == "flat":                                    # a relaxed smirk
+        rect(19.5, 36.2, 3.0, 0.9, mcol)
+        rect(22.5, 35.4, 1.2, 0.9, mcol)
     elif m == "smile":
-        rect(19.5, 35.2, 1.0, 1.0, ink)
-        rect(20.5, 36.0, 2.0, 1.0, ink)
-        rect(22.5, 35.2, 1.0, 1.0, ink)
+        rect(19.5, 36.2, 1.0, 1.0, mcol)
+        rect(20.5, 36.8, 2.0, 1.0, mcol)
+        rect(22.5, 36.2, 1.0, 1.0, mcol)
+        rect(23.5, 35.4, 1.0, 1.0, mcol)
     elif m == "grin":
-        rect(19.5, 35.2, 4.0, 1.0, ink)
-        rect(20.5, 36.2, 2.0, 1.0, ink)
+        rect(19.5, 35.2, 4.0, 1.0, mcol)
+        rect(20.5, 36.2, 2.0, 1.0, mcol)
     elif m == "o":
-        rect(20.5, 35.6, 2.0, 1.8, ink)
+        rect(20.5, 35.6, 2.0, 1.8, mcol)
     elif m == "worried":
-        rect(19.6, 36.4, 1.4, 0.8, ink)
-        rect(20.8, 35.6, 1.4, 0.8, ink)
-        rect(22.0, 36.4, 1.4, 0.8, ink)
+        rect(19.6, 36.4, 1.4, 0.8, mcol)
+        rect(20.8, 35.6, 1.4, 0.8, mcol)
+        rect(22.0, 36.4, 1.4, 0.8, mcol)
     elif m == "yawn":
-        rect(20.0, 35.0, 3.0, 2.8, ink)
+        rect(20.0, 35.0, 3.0, 2.8, mcol)
     elif m == "snore":
-        rect(20.8, 36.0, 1.6, 1.0, ink)
+        rect(20.8, 36.0, 1.6, 1.0, mcol)
 
-    if pose.blush > 0.05:
-        c = T.qc(T.ORANGE, 0.55 * min(1.0, pose.blush))
+    blush = max(pose.blush, 0.35) if VARIANT == "mia" else pose.blush
+    if blush > 0.05:
+        c = T.qc(T.ORANGE, 0.55 * min(1.0, blush))
         rect(11.0, 35.0, 2.0, 1.0, c)
         rect(30.0, 35.0, 2.0, 1.0, c)
 
@@ -460,7 +568,7 @@ class Mascot(QWidget):
             sm.target = st[key]
             if first:
                 sm.snap(st[key])
-        self._blush.target = 1.0 if self._mood == "celebrate" else 0.4
+        self._blush.target = 1.0 if self._mood == "celebrate" else 0.0
         if first:
             self._blush.snap(self._blush.target)
             return
@@ -631,8 +739,8 @@ class Mascot(QWidget):
             eyes, mouth = "happy", "smile"
         elif m == "alert":
             mouth = "o" if int(t * 3.5) % 2 == 0 else "worried"
-        eye_h = (4.0 * openness + 1.2 * wide) * lid
-        eye_w = 2.0 + 0.9 * wide
+        eye_h = (3.0 * openness + 2.2 * wide) * lid
+        eye_w = 2.6 + 0.6 * wide
         eye_bottom = EYE_BOTTOM + 0.7 * wide
 
         # plus

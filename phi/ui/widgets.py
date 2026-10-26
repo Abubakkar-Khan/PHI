@@ -137,9 +137,11 @@ class PillButton(QAbstractButton):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         r = QRectF(self.rect()).adjusted(.5, .5, -.5, -.5)
-        press = clamp(self._press.x, -0.3, 1.2)
+        # Motion must stay inside the widget's own box: the pill is drawn flush against its edges, so any shift or
+        # growth would clip the top or bottom border line. Press only squashes inward, about the centre.
+        press = clamp(self._press.x, 0.0, 1.2)
         c = r.center()
-        p.translate(c.x(), c.y() - self._hover * 0.8 + press * 0.8)
+        p.translate(c.x(), c.y())
         p.scale(1.0 - 0.035 * press, 1.0 - 0.035 * press)
         p.translate(-c.x(), -c.y())
         if self.variant == "primary":
