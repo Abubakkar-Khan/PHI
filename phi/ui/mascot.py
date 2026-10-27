@@ -106,91 +106,92 @@ def _build() -> dict[str, list[list[str]]]:
 
 
 def _hair_buns() -> list[list[str]]:
-    """Fia, traced from the reference: two big fluffy buns that stick out past the face, a small cap with
-    wispy bangs, hair falling beside the lenses, and thin curling strands.
-    Written in sprite columns (negative ones are fine); the grid is PAD columns wider on both sides."""
+    """Fia, traced from the reference picture. All shapes below are in the picture's own pixel coordinates
+    (1024 x 1024) and are rasterised onto the sprite grid, so the proportions stay true to the art:
+    two big buns, a cap with a flat peak, ragged bangs with a sliver of forehead, hair falling beside the
+    lenses, and thin curling strands. The grid is PAD columns wider on both sides."""
     W = SW + 2 * PAD
     g = [["."] * W for _ in range(SH)]
+    SX, SY = 14.5, 15.5                    # picture pixels per sprite cell (the hair is a little smaller than the art)
 
-    def put(c, r, ch="#"):
-        if 0 <= r < SH and -PAD <= c < SW + PAD:
-            g[r][c + PAD] = ch
+    def to_px(c, r):                       # centre of a cell, in picture pixels
+        return 520 + (c + 0.5 - 22) * SX, 565 + (r + 0.5 - 24) * SY
 
-    def runs(r, *rs, ch="#"):
-        for x0, x1 in rs:
-            for c in range(x0, x1 + 1):
-                put(c, r, ch)
+    def inside(pt, poly):
+        x, y = pt
+        hit = False
+        for i in range(len(poly)):
+            x1, y1 = poly[i]
+            x2, y2 = poly[(i + 1) % len(poly)]
+            if (y1 > y) != (y2 > y) and x < (x2 - x1) * (y - y1) / (y2 - y1) + x1:
+                hit = not hit
+        return hit
 
-    def blob(cx, cy, rx, ry):
-        cells = set()
+    def fill(polys, ch="#", only=None):
         for r in range(SH):
             for c in range(-PAD, SW + PAD):
-                if ((c - cx) / rx) ** 2 + ((r - cy) / ry) ** 2 <= 1.0:
-                    cells.add((c, r))
-        edge = {(c, r) for c, r in cells if any((c + dc, r + dr) not in cells for dc, dr in ((1, 0), (-1, 0), (0, 1), (0, -1)))}
-        for c, r in edge:
-            if (r * 5 + c * 11) % 9 == 0:                                  # fluffy: nick the edge ...
-                cells.discard((c, r))
-        for c, r in list(edge):
-            for dc, dr in ((1, 0), (-1, 0), (0, 1), (0, -1)):
-                if (c + dc, r + dr) not in cells and (r * 7 + c * 3 + dr) % 9 == 0:   # ... and add tufts
-                    cells.add((c + dc, r + dr))
-        for c, r in cells:
-            put(c, r)
+                pt = to_px(c, r)
+                if any(inside(pt, q) for q in polys):
+                    if only is None or g[r][c + PAD] == only:
+                        g[r][c + PAD] = ch
 
-    # cap with a narrow peak between the buns
-    for r, rs in {9: [(17, 24)], 10: [(14, 27)], 11: [(12, 29)], 12: [(10, 31)], 13: [(6, 35)],
-                  14: [(3, 38)], 15: [(1, 40)]}.items():
-        runs(r, *rs)
-    blob(2.2, 9.2, 7.7, 7.3)                                          # left bun
-    blob(36.8, 8.2, 7.3, 7.3)                                          # right bun, a little higher
+    def stroke(points):
+        for (x1, y1), (x2, y2) in zip(points, points[1:]):
+            n = max(1, int(max(abs(x2 - x1), abs(y2 - y1)) / 2))
+            for i in range(n + 1):
+                x, y = x1 + (x2 - x1) * i / n, y1 + (y2 - y1) * i / n
+                c, r = int((x - 520) / SX + 22 + 1000) - 1000, int((y - 565) / SY + 24 + 1000) - 1000
+                if 0 <= r < SH and -PAD <= c < SW + PAD:
+                    g[r][c + PAD] = "#"
 
-    # hair falling from the buns beside the lenses
-    left = {16: (-3, 13), 17: (-2, 9), 18: (-1, 8), 19: (-1, 8), 20: (0, 7), 21: (0, 7), 22: (1, 7), 23: (1, 7),
-            24: (2, 7), 25: (3, 7), 26: (4, 7)}
-    right = {16: (28, 43), 17: (30, 42), 18: (31, 41), 19: (32, 40), 20: (32, 40), 21: (33, 40), 22: (33, 39),
-             23: (34, 39), 24: (34, 39), 25: (35, 39), 26: (36, 39)}
-    for r, rs in list(left.items()) + list(right.items()):
-        runs(r, rs)
-
-    # bangs: strands that end in points just above the glasses, with a narrow V of forehead between
-    bangs = {
-        16: [(8, 27)],
-        17: [(8, 19), (23, 31)],
-        18: [(8, 18), (21, 21), (24, 31)],
-        19: [(8, 17), (21, 21), (25, 32)],
-        20: [(9, 16), (21, 21), (26, 32)],
-        21: [(9, 14), (21, 21), (27, 31)],
-        22: [(10, 13), (15, 15), (28, 31)],
-        23: [(10, 11), (29, 30)],
-    }
-    for r, rs in bangs.items():
-        runs(r, *rs)
+    body = [
+        # left bun
+        [(225, 245), (330, 240), (375, 262), (400, 300), (405, 345), (395, 400), (340, 445), (290, 485), (235, 485),
+         (200, 445), (178, 400), (176, 320), (185, 290)],
+        # hair falling from the left bun, beside the lens
+        [(215, 470), (335, 440), (342, 500), (335, 560), (312, 612), (285, 618), (258, 592), (225, 545), (212, 500)],
+        # cap with a flat peak
+        [(330, 450), (400, 330), (440, 290), (570, 285), (640, 310), (675, 350), (705, 430), (560, 430), (420, 450)],
+        # right bun
+        [(690, 215), (790, 210), (835, 235), (865, 290), (880, 355), (870, 415), (830, 442), (780, 452), (700, 432),
+         (655, 385), (640, 332), (645, 285), (662, 245)],
+        # hair falling from the right bun, beside the lens
+        [(690, 420), (802, 432), (812, 500), (802, 562), (772, 602), (736, 612), (700, 592), (690, 520)],
+        # bangs: ragged strands ending in points above the glasses
+        [(335, 430), (482, 400), (500, 440), (470, 520), (456, 548), (440, 522), (420, 556), (396, 526), (380, 552),
+         (350, 532)],
+        [(486, 395), (512, 395), (518, 470), (506, 548), (490, 548)],
+        [(542, 415), (582, 380), (602, 470), (586, 548), (566, 548), (556, 470)],
+        [(575, 380), (692, 430), (702, 560), (662, 556), (640, 522), (602, 470)],
+    ]
+    fill(body)
 
     strands = [
-        # left side, falling and curling under the cheek
-        (1, 27), (1, 28), (0, 29), (0, 30), (0, 31), (1, 32), (2, 33), (3, 34), (4, 34),
-        # right side
-        (40, 26), (41, 27), (41, 28), (40, 29), (40, 30), (39, 31), (39, 32),
-        # curls over the head
-        (12, 8), (12, 7), (13, 5), (14, 4), (15, 4), (16, 5), (16, 7),
-        (25, 3), (24, 4), (24, 5), (24, 6), (25, 7), (25, 8),
-        # strays around the buns
-        (-7, 9), (-8, 12), (-7, 15), (-5, 18), (45, 8), (46, 11), (46, 13), (44, 17), (43, 19),
+        [(165, 345), (140, 360), (130, 375), (145, 400), (140, 438)],                  # left edge of the left bun
+        [(165, 462), (190, 478), (215, 472), (225, 500)],                              # curl under the left bun
+        [(262, 630), (245, 662), (240, 700), (250, 726)],
+        [(300, 712), (295, 745), (310, 775), (336, 796)],
+        [(360, 262), (362, 240), (380, 230), (405, 250), (410, 282), (405, 302)],      # loop above the left bun
+        [(645, 205), (625, 225), (615, 260), (620, 285), (636, 302)],                  # curl by the right bun
+        [(850, 345), (875, 360), (880, 390), (886, 416)],
+        [(857, 430), (850, 462), (846, 498)],
+        [(790, 490), (800, 520), (806, 556)],
+        [(790, 590), (806, 612), (811, 646), (800, 682)],
+        [(720, 676), (746, 686), (756, 706)],
+        [(726, 708), (716, 740), (696, 776), (680, 800)],
     ]
-    for c, r in strands:
-        put(c, r)
+    for s in strands:
+        stroke(s)
 
-    shine = [(0, 6), (1, 6), (2, 6), (1, 7), (2, 7), (3, 8), (-4, 9), (-3, 9), (-3, 10), (-2, 10), (-2, 11),
-             (4, 12), (5, 13), (6, 14),                                                            # left bun
-             (33, 5), (34, 6), (34, 7), (35, 8), (35, 9), (36, 10), (38, 7), (39, 8), (40, 9), (40, 10),
-             (35, 13), (36, 14),                                                                    # right bun
-             (7, 16), (8, 15), (9, 15), (10, 14), (11, 13), (12, 13), (13, 12), (8, 17), (9, 16), (10, 16),
-             (11, 15), (12, 14),                                                                    # cap, left band
-             (26, 12), (27, 13), (28, 14), (29, 15), (30, 16), (31, 17), (27, 12)]                   # cap, right band
-    for c, r in shine:
-        if 0 <= r < SH and g[r][c + PAD] == "#":
-            g[r][c + PAD] = "g"
+    fill([
+        [(285, 278), (335, 275), (345, 300), (330, 330), (295, 325)],                  # left bun
+        [(330, 450), (345, 425), (430, 362), (452, 368), (440, 386), (360, 446)],      # cap, left band
+        [(572, 378), (605, 372), (668, 430), (672, 462), (640, 448)],                  # cap, right band
+        [(700, 258), (742, 248), (722, 300), (700, 330), (690, 300)],                  # right bun
+        [(748, 298), (820, 305), (838, 345), (790, 350), (755, 338)],
+        [(740, 395), (830, 380), (842, 425), (790, 436)],
+        [(700, 372), (740, 400), (760, 470), (745, 545), (715, 572), (705, 520), (715, 450)],
+    ], ch="g", only="#")
     return g
 
 
@@ -206,7 +207,7 @@ STRANDS = {
                  (4, 38)], 10),
     "buns": ([], 5),
 }
-PLUS_AT = {"classic": (40, 10), "buns": (46, 6)}
+PLUS_AT = {"classic": (40, 10), "buns": (48, 6)}
 
 
 def set_variant(name: str) -> None:
