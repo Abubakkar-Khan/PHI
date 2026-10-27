@@ -25,7 +25,8 @@ MOODS = ("idle", "monitoring", "alert", "celebrate", "sleep")
 
 # ---- sprite geometry (cells) --------------------------------------------------------------------
 SW, SH = 44, 41            # the sprite itself, drawn after the reference art (12 px per cell there)
-OX, OY = 4, 7              # sprite origin inside the canvas (headroom for hops, room right for sparks)
+OX, OY = 8, 7              # sprite origin inside the canvas (headroom for hops, room right for sparks)
+PAD = OX                    # extra columns each side of the sprite layers, for big hair
 GRID_W, GRID_H = SW + 2 * OX, OY + SH + 1   # the last row is the ground shadow
 
 EYE_L, EYE_R = 15.0, 28.0  # pupil centres: the middle of each lens
@@ -104,60 +105,97 @@ def _build() -> dict[str, list[list[str]]]:
 
 
 
-def _hair_buns(base) -> list[list[str]]:
-    """Fia, traced from the reference: two big buns with a gap between them, a small cap, wispy bangs,
-    hair falling beside the lenses and a few curling strays."""
-    g = _grid()
+def _hair_buns() -> list[list[str]]:
+    """Fia, traced from the reference: two big fluffy buns that stick out past the face, a small cap with
+    wispy bangs, hair falling beside the lenses, and thin curling strands.
+    Written in sprite columns (negative ones are fine); the grid is PAD columns wider on both sides."""
+    W = SW + 2 * PAD
+    g = [["."] * W for _ in range(SH)]
+
+    def put(c, r, ch="#"):
+        if 0 <= r < SH and -PAD <= c < SW + PAD:
+            g[r][c + PAD] = ch
+
+    def runs(r, *rs, ch="#"):
+        for x0, x1 in rs:
+            for c in range(x0, x1 + 1):
+                put(c, r, ch)
 
     def blob(cx, cy, rx, ry):
+        cells = set()
         for r in range(SH):
-            for c in range(SW):
+            for c in range(-PAD, SW + PAD):
                 if ((c - cx) / rx) ** 2 + ((r - cy) / ry) ** 2 <= 1.0:
-                    g[r][c] = "#"
+                    cells.add((c, r))
+        edge = {(c, r) for c, r in cells if any((c + dc, r + dr) not in cells for dc, dr in ((1, 0), (-1, 0), (0, 1), (0, -1)))}
+        for c, r in edge:
+            if (r * 5 + c * 11) % 9 == 0:                                  # fluffy: nick the edge ...
+                cells.discard((c, r))
+        for c, r in list(edge):
+            for dc, dr in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                if (c + dc, r + dr) not in cells and (r * 7 + c * 3 + dr) % 9 == 0:   # ... and add tufts
+                    cells.add((c + dc, r + dr))
+        for c, r in cells:
+            put(c, r)
 
-    cap = {9: (17, 26), 10: (14, 29), 11: (12, 31), 12: (10, 33), 13: (8, 35), 14: (7, 36), 15: (6, 37)}
-    for r, (x0, x1) in cap.items():
-        _span(g, r, (x0, x1))
-    blob(8.0, 7.4, 6.7, 6.6)                                           # left bun, the bigger one
-    blob(35.0, 6.8, 6.2, 6.4)                                          # right bun, a little higher
+    # cap with a narrow peak between the buns
+    for r, rs in {9: [(17, 24)], 10: [(14, 27)], 11: [(12, 29)], 12: [(10, 31)], 13: [(6, 35)],
+                  14: [(3, 38)], 15: [(1, 40)]}.items():
+        runs(r, *rs)
+    blob(2.2, 9.2, 7.7, 7.3)                                          # left bun
+    blob(36.8, 8.2, 7.3, 7.3)                                          # right bun, a little higher
 
-    for r in range(13, 25):                                            # hair falling from the buns beside the face
-        k = max(0, (r - 13) // 4)
-        _span(g, r, (5 + k, 8), (35, 38 - k))
+    # hair falling from the buns beside the lenses
+    left = {16: (-3, 13), 17: (-2, 9), 18: (-1, 8), 19: (-1, 8), 20: (0, 7), 21: (0, 7), 22: (1, 7), 23: (1, 7),
+            24: (2, 7), 25: (3, 7), 26: (4, 7)}
+    right = {16: (28, 43), 17: (30, 42), 18: (31, 41), 19: (32, 40), 20: (32, 40), 21: (33, 40), 22: (33, 39),
+             23: (34, 39), 24: (34, 39), 25: (35, 39), 26: (36, 39)}
+    for r, rs in list(left.items()) + list(right.items()):
+        runs(r, rs)
 
+    # bangs: strands that end in points just above the glasses, with a narrow V of forehead between
     bangs = {
-        16: [(6, 37)],
-        17: [(6, 37)],
-        18: [(6, 37)],
-        19: [(6, 20), (23, 37)],
-        20: [(6, 19), (24, 36)],
-        21: [(6, 15), (17, 18), (25, 36)],
-        22: [(6, 11), (16, 17), (27, 35)],
-        23: [(6, 9), (15, 15), (32, 34)],
+        16: [(8, 27)],
+        17: [(8, 19), (23, 31)],
+        18: [(8, 18), (21, 21), (24, 31)],
+        19: [(8, 17), (21, 21), (25, 32)],
+        20: [(9, 16), (21, 21), (26, 32)],
+        21: [(9, 14), (21, 21), (27, 31)],
+        22: [(10, 13), (15, 15), (28, 31)],
+        23: [(10, 11), (29, 30)],
     }
-    for r, runs in bangs.items():
-        _span(g, r, *runs)
-    for r in range(18, 22):                                            # thin slits between the strands
-        g[r][13] = g[r][29] = "."
+    for r, rs in bangs.items():
+        runs(r, *rs)
 
-    # curling strays: long hooks beside the cheeks, small arcs over the head
-    left = [(4, 25), (3, 26), (2, 27), (2, 28), (2, 29), (3, 30), (4, 31), (5, 32)]
-    right = [(43 - c, r + 1) for c, r in left]
-    left2 = []
-    right2 = []
-    arcs = [(16, 3), (17, 2), (18, 2), (19, 3), (24, 2), (25, 1), (26, 1), (26, 3)]
-    strays = [(0, 8), (1, 2), (43, 8), (42, 13), (0, 13), (14, 5)]
-    for c, r in left + right + left2 + right2 + arcs + strays:
-        if 0 <= c < SW and 0 <= r < SH:
-            g[r][c] = "#"
+    strands = [
+        # left side, falling and curling under the cheek
+        (1, 27), (1, 28), (0, 29), (0, 30), (0, 31), (1, 32), (2, 33), (3, 34), (4, 34),
+        # right side
+        (40, 26), (41, 27), (41, 28), (40, 29), (40, 30), (39, 31), (39, 32),
+        # curls over the head
+        (12, 8), (12, 7), (13, 5), (14, 4), (15, 4), (16, 5), (16, 7),
+        (25, 3), (24, 4), (24, 5), (24, 6), (25, 7), (25, 8),
+        # strays around the buns
+        (-7, 9), (-8, 12), (-7, 15), (-5, 18), (45, 8), (46, 11), (46, 13), (44, 17), (43, 19),
+    ]
+    for c, r in strands:
+        put(c, r)
 
-    shine = [(4, 3), (5, 3), (3, 5), (4, 5), (5, 6), (6, 7), (8, 2), (9, 3), (10, 4),               # left bun
-             (34, 2), (33, 3), (33, 4), (32, 5), (36, 5), (36, 6), (35, 7),                         # right bun
-             (16, 11), (17, 11), (15, 12), (14, 13), (27, 11), (28, 12), (29, 13)]                  # cap
+    shine = [(0, 6), (1, 6), (2, 6), (1, 7), (2, 7), (3, 8), (-4, 9), (-3, 9), (-3, 10), (-2, 10), (-2, 11),
+             (4, 12), (5, 13), (6, 14),                                                            # left bun
+             (33, 5), (34, 6), (34, 7), (35, 8), (35, 9), (36, 10), (38, 7), (39, 8), (40, 9), (40, 10),
+             (35, 13), (36, 14),                                                                    # right bun
+             (7, 16), (8, 15), (9, 15), (10, 14), (11, 13), (12, 13), (13, 12), (8, 17), (9, 16), (10, 16),
+             (11, 15), (12, 14),                                                                    # cap, left band
+             (26, 12), (27, 13), (28, 14), (29, 15), (30, 16), (31, 17), (27, 12)]                   # cap, right band
     for c, r in shine:
-        if g[r][c] == "#":
-            g[r][c] = "g"
+        if 0 <= r < SH and g[r][c + PAD] == "#":
+            g[r][c + PAD] = "g"
     return g
+
+
+def _pad(g):
+    return [["."] * PAD + row + ["."] * PAD for row in g]
 
 
 VARIANTS = {"classic": "Phi", "buns": "Fia"}
@@ -168,7 +206,7 @@ STRANDS = {
                  (4, 38)], 10),
     "buns": ([], 5),
 }
-PLUS_AT = {"classic": (40, 10), "buns": (42, 3)}
+PLUS_AT = {"classic": (40, 10), "buns": (46, 6)}
 
 
 def set_variant(name: str) -> None:
@@ -180,9 +218,9 @@ def set_variant(name: str) -> None:
 
 @lru_cache(maxsize=4)
 def _sprite(variant: str) -> dict[str, list[list[str]]]:
-    s = _build()
+    s = {k: _pad(v) for k, v in _build().items()}
     if variant == "buns":
-        s["hair"] = _hair_buns(s["hair"])
+        s["hair"] = _hair_buns()
     return s
 
 # antennae are drawn cell by cell so they can bend: (row, col)
@@ -197,17 +235,18 @@ def _layers(cell_dev: int, ratio: float, fill: str, variant: str = "classic") ->
     """Pre-render each layer at an integer number of device pixels per cell (so cell edges never blur)."""
     plan = (("skin", {"#": fill}), ("line", {"#": T.INK}), ("hair", {"#": T.INK, "g": HI, "o": T.ORANGE}), ("glasses", {"#": T.INK}))
     out: dict[str, QPixmap] = {}
+    GW = len(_sprite(variant)["skin"][0])
     for name, colors in plan:
-        img = QImage(SW * cell_dev, SH * cell_dev, QImage.Format.Format_ARGB32_Premultiplied)
+        img = QImage(GW * cell_dev, SH * cell_dev, QImage.Format.Format_ARGB32_Premultiplied)
         img.fill(Qt.GlobalColor.transparent)
         q = QPainter(img)
         for r, row in enumerate(_sprite(variant)[name]):
             c = 0
-            while c < SW:
+            while c < GW:
                 ch = row[c]
                 if ch in colors:
                     c0 = c
-                    while c < SW and row[c] == ch:
+                    while c < GW and row[c] == ch:
                         c += 1
                     q.fillRect(c0 * cell_dev, r * cell_dev, (c - c0) * cell_dev, cell_dev, QColor(colors[ch]))
                 else:
@@ -290,7 +329,7 @@ def paint_pose(p: QPainter, pose: Pose, px: float, dpr: float, fill: str) -> Non
     p.scale(pose.sx, pose.sy)
     p.translate(-cx, -fy)
 
-    origin = QPointF(OX * px, OY * px)
+    origin = QPointF((OX - PAD) * px, OY * px)
     p.drawPixmap(origin, L["skin"])
     p.drawPixmap(origin, L["line"])
     p.drawPixmap(origin + QPointF(pose.hair_dx * px, pose.hair_dy * px), L["hair"])
@@ -910,7 +949,8 @@ class WordMark(QWidget):
 def ghost_icon(mood: str = "monitoring", size: int = 256) -> QIcon:
     """Static render of the head for the tray, the window and the extension icons."""
     px, pad = 8, 2                                      # pad: room for the lifted hair and the plus's arms
-    sprite = QPixmap((SW + 2 * pad) * px, (SH + 2 * pad) * px)
+    padx = 8 if VARIANT == "buns" else pad              # Fia's buns stick out sideways
+    sprite = QPixmap((SW + 2 * padx) * px, (SH + 2 * pad) * px)
     sprite.fill(Qt.GlobalColor.transparent)
     # The icon always uses the light palette, so the tray, taskbar and exe show the same face in every theme.
     saved = {k: getattr(T, k) for k in T.LIGHT}
@@ -918,7 +958,7 @@ def ghost_icon(mood: str = "monitoring", size: int = 256) -> QIcon:
     _layers.cache_clear()
     try:
         p = QPainter(sprite)
-        p.translate((pad - OX) * px, (pad - OY) * px)
+        p.translate((padx - OX) * px, (pad - OY) * px)
         paint_pose(p, replace(Pose.static(mood), shadow=0.0), px, 1.0, T.PAPER)
         p.end()
     finally:
