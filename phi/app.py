@@ -124,8 +124,13 @@ def main(argv: list[str] | None = None) -> int:
 
     store = Store()
     cfg = Settings(store)
-    store.purge_older_than(cfg.get("retention_days"))
-    cfg.subscribe(lambda k: store.purge_older_than(cfg.get("retention_days")) if k == "retention_days" else None)
+
+    def purge_in_background() -> None:
+        """Deleting old days can take seconds on a big history: never on the thread that draws the window."""
+        import threading
+        threading.Thread(target=lambda: store.purge_older_than(cfg.get("retention_days")), name="phi-purge", daemon=True).start()
+    purge_in_background()
+    cfg.subscribe(lambda k: purge_in_background() if k == "retention_days" else None)
     autostart.set_enabled(bool(cfg.get("autostart")))
     T.apply_settings(cfg)
     mascot_module.set_variant(cfg.get("character"))

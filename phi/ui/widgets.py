@@ -136,9 +136,11 @@ class PillButton(QAbstractButton):
     def paintEvent(self, _):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        r = QRectF(self.rect()).adjusted(.5, .5, -.5, -.5)
-        # Motion must stay inside the widget's own box: the pill is drawn flush against its edges, so any shift or
-        # growth would clip the top or bottom border line. Press only squashes inward, about the centre.
+        # Keep the outline a full logical pixel inside the widget. At fractional display scaling (125%, 150%) a widget's
+        # top edge can land on half a device pixel, Windows clips it inward, and a border drawn flush against the edge
+        # loses part of its top row while the bottom row stays whole. That read as buttons "cut from above".
+        r = QRectF(self.rect()).adjusted(1.0, 1.0, -1.0, -1.0)
+        # Motion must stay inside the widget's own box too: press only squashes inward, about the centre.
         press = clamp(self._press.x, 0.0, 1.2)
         c = r.center()
         p.translate(c.x(), c.y())
@@ -371,9 +373,17 @@ class Segmented(QWidget):
     def set_index(self, i: int, emit: bool = False):
         if i == self.index:
             return
-        self._from = (self._x, self._wd)
         self.index = i
-        run(self._anim, 0, 1)
+        if self.isVisible():
+            self._from = (self._x, self._wd)
+            run(self._anim, 0, 1)
+        else:
+            # Not on screen yet (a control being built or restored, e.g. after a theme change): start on the chosen
+            # option instead of sliding to it from the first one.
+            self._anim.stop()
+            self._x, self._wd = self._target(i)
+            self._from = (self._x, self._wd)
+            self.update()
         if emit:
             self.changed.emit(i)
 
@@ -390,7 +400,8 @@ class Segmented(QWidget):
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         p.setPen(QPen(QColor(T.LINE), 1))
         p.setBrush(QColor(T.SURFACE))
-        p.drawRoundedRect(QRectF(self.rect()).adjusted(.5, .5, -.5, -.5), 16, 16)
+        # a full pixel inside the widget: see PillButton.paintEvent (half-pixel edges at 125% scaling clip a flush border)
+        p.drawRoundedRect(QRectF(self.rect()).adjusted(1.0, 1.0, -1.0, -1.0), 15, 15)
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(QColor(T.INK))
         p.drawRoundedRect(QRectF(self._x, 3, self._wd, 26), 13, 13)

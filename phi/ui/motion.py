@@ -36,9 +36,12 @@ class _Clock(QObject):
         if fn in self._subs:
             return
         self._subs.append(fn)
-        if not self._timer.isActive():
-            self._last = time.perf_counter()
-            self._timer.start()
+        try:
+            if not self._timer.isActive():
+                self._last = time.perf_counter()
+                self._timer.start()
+        except RuntimeError:                  # Qt already destroyed the timer (the application is shutting down)
+            self._subs.clear()
 
     def unsubscribe(self, fn: Callable[[float], None]) -> None:
         try:
@@ -46,7 +49,10 @@ class _Clock(QObject):
         except ValueError:
             return
         if not self._subs:
-            self._timer.stop()
+            try:
+                self._timer.stop()
+            except RuntimeError:              # at shutdown the timer is already gone, and that is fine
+                pass
 
     def _tick(self) -> None:
         now = time.perf_counter()

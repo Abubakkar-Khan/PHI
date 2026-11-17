@@ -100,10 +100,19 @@ class ReminderScreen(QWidget):
         self.ring = RingMascot(int(230 * k), 3 if k > .9 else 2, "monitoring", dark=True)
         center(self.ring, 10)
         self.title = mk_label(message, T.sans(int(size * k), T.QFont.Weight.Black), T.INK, Qt.AlignmentFlag.AlignHCenter)
+        self.title.setTextFormat(Qt.TextFormat.PlainText)         # a message is text: "<b>" is shown as typed, never rendered
         self.title.setWordWrap(True)
         width = min(screen.geometry().width() - int(240 * k), 1500)
         needed = QFontMetrics(self.title.font()).boundingRect(0, 0, width, 4000, int(Qt.TextFlag.TextWordWrap), message)
-        self.title.setFixedSize(width, needed.height() + 24)      # a wrapped label otherwise gets clipped
+        # Whatever the message, the Done and Snooze buttons must stay on the screen: cap the text to 45% of its height
+        # and shrink the font in steps until it fits.
+        cap = int(screen.geometry().height() * 0.45)
+        px = int(size * k)
+        while needed.height() + 24 > cap and px > 14:
+            px = max(14, int(px * 0.85))
+            self.title.setFont(T.sans(px, T.QFont.Weight.Black))
+            needed = QFontMetrics(self.title.font()).boundingRect(0, 0, width, 4000, int(Qt.TextFlag.TextWordWrap), message)
+        self.title.setFixedSize(width, min(needed.height() + 24, cap))   # a wrapped label otherwise gets clipped
         root.addWidget(self.title, 0, Qt.AlignmentFlag.AlignHCenter)
         root.addSpacing(10)
         when = (f"EVERY {item.get('every_min', 30)} MIN" if item.get("mode") != "daily" else f"DAILY AT {item.get('time', '')}")

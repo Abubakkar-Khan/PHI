@@ -389,18 +389,35 @@ class PopupController:
             self.current.update_seconds(snap["session"])
 
     def show(self, payload: dict):
-        if self.cfg.get("lockdown"):
-            popup = LockScreen(payload, self.cfg.get("extend_min"), self.cfg.get("lockdown_seconds"))
-        else:
-            popup = NudgePopup(payload, self.cfg.get("extend_min"), self.cfg.get("pause_min"))
-        pausing = bool(self.cfg.get("pause_video")) and payload["kind"] != "app"
-        popup.action.connect(lambda a, pl=payload: self._on_action(a, pl, pausing))
-        popup.destroyed.connect(lambda: setattr(self, "current", None) if self.current is popup else None)
-        popup.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
-        self.current = popup
-        if pausing:
-            winapi.media_play_pause()      # silence the Short behind the lock right away
-        popup.present()
+        pausing = bool(self.cfg.get("pause_video")) and payload.get("kind") != "app"
+        paused_now = False
+        popup = None
+        try:
+            if self.cfg.get("lockdown"):
+                popup = LockScreen(payload, self.cfg.get("extend_min"), self.cfg.get("lockdown_seconds"))
+            else:
+                popup = NudgePopup(payload, self.cfg.get("extend_min"), self.cfg.get("pause_min"))
+            popup.action.connect(lambda a, pl=payload: self._on_action(a, pl, pausing))
+            popup.destroyed.connect(lambda: setattr(self, "current", None) if self.current is popup else None)
+            popup.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+            self.current = popup
+            if pausing:
+                winapi.media_play_pause()      # silence the Short behind the lock right away
+                paused_now = True
+            popup.present()
+        except Exception as exc:
+            # If the popup cannot be shown, PHI must not wait for an answer that will never come: it would stay
+            # silent for the rest of the session. Undo what was done, tell the engine, and carry on.
+            if paused_now:
+                winapi.media_play_pause()
+            if popup is not None:
+                try:
+                    popup.hide()
+                    popup.deleteLater()
+                except Exception:
+                    pass
+            self.current = None
+            self.engine.popup_failed(repr(exc))
 
     def _on_action(self, action: str, payload: dict, paused: bool) -> None:
         if paused and action != "stop":    # staying on the page: let the video carry on

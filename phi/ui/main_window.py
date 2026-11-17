@@ -90,6 +90,13 @@ class Sidebar(QWidget):
             self._hover[i] += (target - self._hover[i]) * max(v, .15)
         self.update()
 
+    def snap_to(self, i: int) -> None:
+        """Jump straight to a row with no slide. Used when the window is rebuilt (a theme change), because a fresh
+        sidebar would otherwise start on the first row and visibly travel down to the page you are on."""
+        self.index = i
+        self._ys.snap(float(self._row_y(i)))
+        self.update()
+
     def select(self, i: int, emit: bool = True):
         if i == self.index:
             return
@@ -315,7 +322,7 @@ class MainWindow(QWidget):
         QWidget().setLayout(old)                      # detach the emptied layout so a fresh one can be installed
         self._build()
         self.stack.setCurrentIndex(idx)
-        self.sidebar.select(idx, emit=False)
+        self.sidebar.snap_to(idx)
         for w in (self.sidebar, self.titlebar, self.stack):
             w.show()
         self._refresh()

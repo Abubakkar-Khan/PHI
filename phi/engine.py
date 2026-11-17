@@ -52,6 +52,7 @@ class Engine(QObject):
         self._last_shorts = 0.0
         self._extra_session = 0.0
         self._extra_daily = 0.0
+        self._shorts_grace_until = 0.0      # "give me N more minutes": no Shorts nudge before this moment
         self._extra_site: dict[str, float] = defaultdict(float)
         self._extra_app: dict[str, float] = defaultdict(float)
         self._last_swipes: dict[int, int] = {}
@@ -116,8 +117,17 @@ class Engine(QObject):
 
     def flush(self) -> None:
         if self._buf:
-            self.store.add_usage(list(self._buf.items()))
-            self._buf.clear()
+            snapshot = list(self._buf.items())
+            if self.store.add_usage(snapshot):
+                for key, secs in snapshot:                # keep anything added while the write ran
+                    left = self._buf[key] - secs
+                    if left > 1e-9:
+                        self._buf[key] = left
+                    else:
+                        del self._buf[key]
+            elif len(self._buf) > 20000:                  # the database stays unwritable: cap memory, drop the oldest
+                for key in list(self._buf)[:5000]:
+                    del self._buf[key]
         self._last_flush = time.time()
 
     # ---- recording -----------------------------------------------------
@@ -290,6 +300,8 @@ class Engine(QObject):
             reason = "shorts"
         elif daily_limit and today >= daily_limit + self._extra_daily:
             reason = "daily"
+        if now < self._shorts_grace_until:
+            reason = None                 # the time you asked for is not over yet
         if reason and self._can_nudge(now):
             seconds = self._session if reason == "shorts" else today
             self._emit_nudge({"kind": reason, "seconds": seconds, "label": "YouTube Shorts", "domain": "youtube.com"})
@@ -330,13 +342,19 @@ class Engine(QObject):
         self.nudge.emit(payload)
 
     # ---- popup results -----------------------------------------------------
+    def popup_failed(self, why: str) -> None:
+        """A popup could not be shown: PHI must not wait for an answer that will never come."""
+        self.nudge_open = False
+        self.bypass_until = max(self.bypass_until, time.time() + DISMISS_RECHECK)   # try again shortly, not every tick
+        self.log(f"POPUP FAILED {why}")
+
     def resolve(self, payload: dict, action: str) -> None:
         """action: stop | more | pause | bypass | dismiss"""
         now = time.time()
         self.nudge_open = False
-        self.store.log_event(now, self._day, action, payload["kind"])
+        self.store.log_event(now, self._day, action or "unknown", payload.get("kind", "unknown"))
         extend = self.cfg.get("extend_min") * 60
-        kind = payload["kind"]
+        kind = payload.get("kind", "unknown")
         self.log(f"RESOLVE {action} ({kind})")
 
         if action == "stop":
@@ -354,6 +372,7 @@ class Engine(QObject):
             self._last_shorts = 0.0
             self._repeat = 0
             self._extra_session = self._extra_daily = 0.0
+            self._shorts_grace_until = 0.0          # you chose to stop: an earlier "more time" no longer applies
             self.bypass_until = max(self.bypass_until, now + 5)
             self.celebrated.emit()
         elif action == "dismiss":
@@ -362,6 +381,9 @@ class Engine(QObject):
         elif action == "more":
             self._last_shorts = now   # time spent on the lock screen must not end the session
             if kind in ("shorts", "daily"):
+                # Wall-clock grace: even if you leave Shorts for a moment (which ends the session and clears the
+                # allowance below) the lock cannot come back before the minutes you asked for are over.
+                self._shorts_grace_until = now + extend
                 today = self.today_seconds("shorts", "youtube")
                 self._extra_session = max(0.0, self._session + extend - self.cfg.get("shorts_limit_min") * 60)
                 self._extra_daily = max(0.0, today + extend - self.cfg.get("shorts_daily_min") * 60)

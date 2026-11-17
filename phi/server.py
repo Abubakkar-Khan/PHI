@@ -12,6 +12,7 @@ Requests must carry `X-PHI: 1` and an extension Origin, so ordinary web pages ca
 from __future__ import annotations
 
 import json
+import socket
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -52,6 +53,7 @@ class Bridge:
 def _make_handler(bridge: Bridge):
     class Handler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
+        timeout = 5          # a client that stops talking is dropped after 5 s instead of holding a thread forever
 
         def log_message(self, *args):  # silence
             pass
@@ -69,7 +71,10 @@ def _make_handler(bridge: Bridge):
             if self._origin_ok():
                 self.send_header("Access-Control-Allow-Origin", origin)
             self.end_headers()
-            self.wfile.write(data)
+            try:
+                self.wfile.write(data)
+            except OSError:
+                pass                                   # the client already hung up
 
         def do_OPTIONS(self):
             if not self._origin_ok():
@@ -98,13 +103,16 @@ def _make_handler(bridge: Bridge):
                 payload = json.loads(self.rfile.read(length))
                 if not isinstance(payload, dict):
                     raise ValueError
+            except OSError:
+                self.close_connection = True      # the client stalled or vanished mid-body: just hang up
+                return
             except (ValueError, TypeError):
                 return self._send(400, {"ok": False})
             event = {
-                "tabId": int(payload.get("tabId") or 0),
-                "host": str(payload.get("host") or "")[:253],
+                "tabId": _int(payload.get("tabId")),
+                "host": _text(payload.get("host"))[:253],
                 "shorts": bool(payload.get("shorts")),
-                "swipes": int(payload.get("swipes") or 0),
+                "swipes": max(0, _int(payload.get("swipes"))),
                 "audible": bool(payload.get("audible")),
                 "active": bool(payload.get("active")),
                 "incognito": bool(payload.get("incognito")),
@@ -115,6 +123,34 @@ def _make_handler(bridge: Bridge):
     return Handler
 
 
+def _int(value) -> int:
+    """A whole number from whatever the extension sent; anything unusable becomes 0 (never an exception)."""
+    try:
+        if isinstance(value, bool):
+            return int(value)
+        n = int(float(value))
+    except (TypeError, ValueError, OverflowError):
+        return 0
+    return n if -2**31 <= n < 2**31 else 0
+
+
+def _text(value) -> str:
+    return value if isinstance(value, str) else ""
+
+
+class _Server(ThreadingHTTPServer):
+    daemon_threads = True
+    allow_reuse_address = False              # on Windows reuse would let a second program share PHI's port silently
+
+    def server_bind(self):
+        if hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)   # nobody else may bind this port
+        super().server_bind()
+
+    def handle_error(self, request, client_address):
+        pass                                  # a client that hung up mid-request is normal, not a traceback on stderr
+
+
 class BridgeServer:
     def __init__(self, bridge: Bridge, port: int = PORT):
         self.bridge, self.port = bridge, port
@@ -123,11 +159,10 @@ class BridgeServer:
 
     def start(self) -> bool:
         try:
-            self._httpd = ThreadingHTTPServer(("127.0.0.1", self.port), _make_handler(self.bridge))
+            self._httpd = _Server(("127.0.0.1", self.port), _make_handler(self.bridge))
         except OSError as exc:
             self.error = str(exc)
             return False
-        self._httpd.daemon_threads = True
         threading.Thread(target=self._httpd.serve_forever, name="phi-bridge", daemon=True).start()
         return True
 
